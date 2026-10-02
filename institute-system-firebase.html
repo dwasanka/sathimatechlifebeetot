@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Institute Management System</title>
+<style>
+:root{
+  --bg:#f6f7f9; --card:#fff; --text:#1a1d23; --muted:#6b7280; --border:#e2e5ea;
+  --accent:#2563eb; --accent-text:#fff; --danger:#dc2626; --tab-bg:#eef0f3;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--bg:#15171c;--card:#1e2129;--text:#e8e9ec;--muted:#9aa0ac;--border:#2c303a;--accent:#3b82f6;--accent-text:#fff;--danger:#f87171;--tab-bg:#262a33;}
+}
+:root[data-theme="dark"]{--bg:#15171c;--card:#1e2129;--text:#e8e9ec;--muted:#9aa0ac;--border:#2c303a;--accent:#3b82f6;--accent-text:#fff;--danger:#f87171;--tab-bg:#262a33;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:14px;}
+header{padding:14px 16px;border-bottom:1px solid var(--border);background:var(--card);position:sticky;top:0;z-index:5;}
+header h1{margin:0;font-size:16px}
+header p{margin:2px 0 0;color:var(--muted);font-size:11px}
+nav{display:flex;gap:6px;overflow-x:auto;padding:10px 16px;background:var(--tab-bg);border-bottom:1px solid var(--border);}
+nav button{flex:0 0 auto;padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;font-size:12.5px;white-space:nowrap;}
+nav button.active{background:var(--accent);color:var(--accent-text);border-color:var(--accent);}
+main{padding:14px 16px 40px;max-width:920px;margin:0 auto;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:14px;}
+.card h2{margin:0 0 10px;font-size:15px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;}
+label{display:block;font-size:11.5px;color:var(--muted);margin-bottom:3px;}
+input,select,textarea{width:100%;padding:7px 8px;border-radius:7px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;margin-bottom:8px;}
+button.btn{padding:8px 14px;border-radius:7px;border:none;background:var(--accent);color:var(--accent-text);cursor:pointer;font-size:13px;}
+button.btn.secondary{background:transparent;border:1px solid var(--border);color:var(--text);}
+button.btn.danger{background:transparent;color:var(--danger);border:1px solid var(--danger);padding:4px 8px;font-size:11.5px;}
+button.btn.small{padding:4px 8px;font-size:11.5px;}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+th,td{text-align:left;padding:6px 7px;border-bottom:1px solid var(--border);white-space:nowrap;}
+th{color:var(--muted);font-weight:600;}
+.tablewrap{overflow-x:auto;}
+.pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10.5px;background:var(--tab-bg);}
+.row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+.stat{background:var(--tab-bg);border-radius:8px;padding:10px;text-align:center;}
+.stat b{display:block;font-size:17px}
+.stat span{font-size:10.5px;color:var(--muted)}
+.statgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;margin-bottom:14px;}
+.small{font-size:11px;color:var(--muted);}
+.thumb{width:28px;height:28px;border-radius:6px;object-fit:cover;vertical-align:middle;}
+.cb-list{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
+.cb-item{border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;display:flex;align-items:center;gap:5px;}
+.inactive-row{opacity:.5;}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+<header><h1>🎓 Institute Management System</h1><p>TechLife IT Academy · Sathima Education Institute · BEETOT English Medium Pre School</p></header>
+<nav id="tabs"></nav>
+<main id="app"></main>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
+import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCYJKPszgZeTtxde-zoEr11hT5eTzBRgyY",
+  authDomain: "sathimatechlifebeetot.firebaseapp.com",
+  projectId: "sathimatechlifebeetot",
+  storageBucket: "sathimatechlifebeetot.firebasestorage.app",
+  messagingSenderId: "269981321925",
+  appId: "1:269981321925:web:a5f9fcdea0d5642342feac"
+};
+const fbApp = initializeApp(firebaseConfig);
+const fsdb = getFirestore(fbApp);
+
+const INSTITUTES = ["TechLife IT Academy","Sathima Education Institute","BEETOT English Medium Pre School"];
+const COLLECTION_KEYS = ['classes','teachers','students','staff','attendance','tpay','exp','income','admissions'];
+let DB={}, REMOTE={}; COLLECTION_KEYS.forEach(k=>{ DB[k]=[]; REMOTE[k]=[]; });
+let SETTINGS={admissionFee:500, defaultShare:80, adminPassword:'admin123'};
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
+
+function save(kind){
+  const remoteList=REMOTE[kind]||[]; const localList=DB[kind];
+  const localIds=new Set(localList.map(r=>r.id));
+  remoteList.forEach(r=>{ if(!localIds.has(r.id)) deleteDoc(doc(fsdb,kind,r.id)).catch(()=>{}); });
+  localList.forEach(r=>{ const old=remoteList.find(x=>x.id===r.id);
+    if(!old || JSON.stringify(old)!==JSON.stringify(r)) setDoc(doc(fsdb,kind,r.id), r).catch(e=>notify('Could not sync '+kind+': '+(e&&e.message||'try again')));
+  });
+}
+function saveSettings(){ setDoc(doc(fsdb,'settings','main'), SETTINGS).catch(()=>notify('Could not save settings.')); }
+function safeRerender(){ const ae=document.activeElement; if(!ae||(ae.tagName!=='INPUT'&&ae.tagName!=='SELECT'&&ae.tagName!=='TEXTAREA')) render(); }
+COLLECTION_KEYS.forEach(k=>{
+  onSnapshot(collection(fsdb,k), snap=>{
+    const list=snap.docs.map(d=>Object.assign({}, d.data(), {id:d.id}));
+    REMOTE[k]=list; DB[k]=list.map(r=>Object.assign({},r)); safeRerender();
+  }, err=>notify('Sync error ('+k+'): '+err.message));
+});
+onSnapshot(doc(fsdb,'settings','main'), snap=>{
+  if(snap.exists()) SETTINGS=Object.assign({admissionFee:500, defaultShare:80, adminPassword:'admin123'}, snap.data());
+  safeRerender();
+}, err=>notify('Sync error (settings): '+err.message));
+
+function genNo(prefix, arr){ let max=0; arr.forEach(x=>{ const m=(x.no||'').match(/(\d+)$/); if(m) max=Math.max(max,parseInt(m[1])); }); return prefix+String(max+1).padStart(4,'0'); }
+function age(dob){ if(!dob) return ''; const d=new Date(dob), n=new Date(); let a=n.getFullYear()-d.getFullYear(); const m=n.getMonth()-d.getMonth(); if(m<0||(m===0&&n.getDate()<d.getDate())) a--; return a; }
+function money(n){ return 'Rs. '+(Number(n)||0).toLocaleString(); }
+function notify(msg){ let t=document.getElementById('__toast'); if(!t){ t=el('div',{id:'__toast'}); t.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:8px;font-size:13px;z-index:200;max-width:85%;text-align:center;box-shadow:0 4px 14px rgba(0,0,0,.25);transition:opacity .25s;'; document.body.appendChild(t); } t.textContent=msg; t.style.opacity='1'; clearTimeout(t._timer); t._timer=setTimeout(()=>{ t.style.opacity='0'; },2500); }
+function confirmAdmin(label,onOk){
+  const overlay=el('div'); overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px;';
+  const box=el('div',{class:'card'}); box.style.cssText='max-width:320px;width:100%;margin:0;';
+  box.appendChild(el('h2',{},'Admin Password Required'));
+  box.appendChild(el('p',{class:'small'},'Enter the admin password to '+label+'.'));
+  const pwd=el('input',{type:'password',placeholder:'Password'});
+  const err=el('p',{class:'small'},'Incorrect password.'); err.style.cssText='color:var(--danger);display:none;';
+  box.appendChild(pwd); box.appendChild(err);
+  const row=el('div',{class:'row'});
+  const okBtn=el('button',{class:'btn',onclick:()=>{ if(pwd.value===SETTINGS.adminPassword){ document.body.removeChild(overlay); onOk(); } else { err.style.display='block'; pwd.value=''; pwd.focus(); } }},'Confirm');
+  const cancelBtn=el('button',{class:'btn secondary',onclick:()=>document.body.removeChild(overlay)},'Cancel');
+  pwd.addEventListener('keydown',e=>{ if(e.key==='Enter') okBtn.click(); });
+  row.appendChild(okBtn); row.appendChild(cancelBtn); box.appendChild(row);
+  overlay.appendChild(box); document.body.appendChild(overlay); pwd.focus();
+}
+function triggerDownload(filename, blob){
+  const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+}
+function makePrintableNode(bodyHtml){
+  const node=el('div',{class:'print-capture'});
+  node.style.cssText='position:fixed;left:-10000px;top:0;background:#ffffff;color:#111111;padding:24px;width:820px;font-family:Arial,Helvetica,sans-serif;';
+  node.innerHTML='<style>.print-capture h1{font-size:18px;margin:0 0 4px} .print-capture h2{font-size:13px;color:#444;margin:14px 0 4px} .print-capture table{width:100%;border-collapse:collapse;margin-bottom:10px} .print-capture th,.print-capture td{border:1px solid #ccc;padding:5px 7px;text-align:left;font-size:12px} .print-capture th{background:#f0f0f0}</style>'+bodyHtml;
+  document.body.appendChild(node); return node;
+}
+function exportReport(filename, bodyHtml, format){
+  if(typeof html2canvas==='undefined'){ notify('Export library still loading — try again in a moment.'); return; }
+  const node=makePrintableNode(bodyHtml);
+  html2canvas(node,{scale:2, backgroundColor:'#ffffff'}).then(canvas=>{
+    document.body.removeChild(node);
+    if(format==='jpg'){
+      canvas.toBlob(blob=>{ triggerDownload(filename+'.jpg', blob); notify('Image downloaded.'); }, 'image/jpeg', 0.92);
+    } else {
+      if(typeof window.jspdf==='undefined'){ notify('PDF library still loading — try again.'); return; }
+      const {jsPDF}=window.jspdf; const w=canvas.width/2, h=canvas.height/2;
+      const pdf=new jsPDF({orientation:w>h?'l':'p', unit:'pt', format:[w,h]});
+      pdf.addImage(canvas.toDataURL('image/jpeg',0.92),'JPEG',0,0,w,h);
+      triggerDownload(filename+'.pdf', pdf.output('blob')); notify('PDF downloaded.');
+    }
+  }).catch(()=>notify('Could not generate the export.'));
+}
+function normalizeEnrollments(student){ if(student.enrollments) return student.enrollments; return (student.classIds||[]).map(id=>({classId:id,level:'',monthlyFee:'',dailyFee:''})); }
+function getEnrollment(student,classId){ return normalizeEnrollments(student).find(e=>e.classId===classId); }
+function isEnrolled(student,classId){ return normalizeEnrollments(student).some(e=>e.classId===classId); }
+function getFee(student,classId,source){ const en=getEnrollment(student,classId); const c=DB.classes.find(x=>x.id===classId); if(source==='Monthly Fee') return en&&en.monthlyFee!=='' && en.monthlyFee!=null ? Number(en.monthlyFee) : Number(c?c.monthlyFee:0)||0; if(source==='Daily Fee') return en&&en.dailyFee!=='' && en.dailyFee!=null ? Number(en.dailyFee) : Number(c?c.dailyFee:0)||0; return 0; }
+
+function el(tag,attrs={},...kids){ const e=document.createElement(tag); for(const k in attrs){ if(k==='html') e.innerHTML=attrs[k]; else if(k.startsWith('on')) e.addEventListener(k.slice(2),attrs[k]); else e.setAttribute(k,attrs[k]); } kids.forEach(k=>e.appendChild(typeof k==='string'?document.createTextNode(k):k)); return e; }
+function compressImage(file){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>{ const img=new Image(); img.onload=()=>{
+      const maxDim=320; let w=img.width,h=img.height;
+      if(w>h){ if(w>maxDim){ h=Math.round(h*maxDim/w); w=maxDim; } } else if(h>maxDim){ w=Math.round(w*maxDim/h); h=maxDim; }
+      const canvas=document.createElement('canvas'); canvas.width=w; canvas.height=h;
+      canvas.getContext('2d').drawImage(img,0,0,w,h);
+      resolve(canvas.toDataURL('image/jpeg',0.6));
+    }; img.onerror=reject; img.src=reader.result; };
+    reader.onerror=reject; reader.readAsDataURL(file);
+  });
+}
+function photoInput(current, onLoad){
+  const wrap=el('div');
+  const prev=el('img',{class:'thumb', src: current||'', style: current?'display:inline-block;margin-bottom:6px':'display:none'});
+  const inp=el('input',{type:'file',accept:'image/*'});
+  const statusEl=el('span',{class:'small'},'');
+  inp.onchange=async ()=>{
+    const f=inp.files[0]; if(!f) return;
+    statusEl.textContent=' Processing...';
+    try{ const dataUrl=await compressImage(f); prev.src=dataUrl; prev.style.display='inline-block'; statusEl.textContent=''; onLoad(dataUrl); }
+    catch(e){ statusEl.textContent=''; notify('Could not process photo.'); }
+  };
+  wrap.appendChild(prev); wrap.appendChild(inp); wrap.appendChild(statusEl);
+  wrap._setPreview=(v)=>{ prev.src=v||''; prev.style.display=v?'inline-block':'none'; };
+  return wrap;
+}
+
+const TABS=[{id:'dashboard',label:'Dashboard'},{id:'classes',label:'Subjects/Classes'},{id:'teachers',label:'Teachers'},{id:'students',label:'Students'},{id:'staff',label:'Staff'},{id:'attendance',label:'Attendance'},{id:'tpay',label:'Teacher Payments'},{id:'exp',label:'Expenses'},{id:'admissions',label:'Admissions'},{id:'income',label:'Income'},{id:'reports',label:'Reports'},{id:'settings',label:'Settings'}];
+let active='dashboard';
+function renderTabs(){ const nav=document.getElementById('tabs'); nav.innerHTML=''; TABS.forEach(t=>{ const b=el('button',{onclick:()=>{active=t.id;render();}},t.label); if(t.id===active) b.className='active'; nav.appendChild(b); }); }
+function render(){ renderTabs(); const app=document.getElementById('app'); app.innerHTML=''; const fn={dashboard:viewDashboard,classes:viewClasses,teachers:()=>viewPerson('teachers'),students:()=>viewPerson('students'),staff:()=>viewPerson('staff'),attendance:viewAttendance,tpay:viewTPay,exp:viewExp,admissions:viewAdmissions,income:viewIncome,reports:viewReports,settings:viewSettings}[active]; app.appendChild(fn()); }
+
+/* ---------- DASHBOARD ---------- */
+function viewDashboard(){
+  const wrap=el('div'); const today=new Date().toISOString().slice(0,10); const mp=today.slice(0,7);
+  const presentToday=DB.attendance.filter(a=>a.date===today&&a.status==='present').length;
+  const incM=DB.income.filter(e=>e.date.startsWith(mp)).reduce((s,e)=>s+Number(e.amount),0);
+  const admM=DB.admissions.filter(e=>e.date.startsWith(mp)).reduce((s,e)=>s+Number(e.amount),0);
+  const expM=DB.exp.filter(e=>e.date.startsWith(mp)).reduce((s,e)=>s+Number(e.amount),0);
+  const tpM=DB.tpay.filter(e=>e.date.startsWith(mp)).reduce((s,e)=>s+Number(e.amount),0);
+  wrap.appendChild(el('div',{class:'statgrid'},
+    stat(DB.teachers.filter(t=>t.status!=='inactive').length,'Active Teachers'),
+    stat(DB.students.filter(s=>s.status!=='inactive').length,'Active Students'),
+    stat(DB.staff.filter(s=>s.status!=='inactive').length,'Active Staff'),
+    stat(presentToday,'Present Today'),
+    stat(money(incM+admM),'Income (Month)'),
+    stat(money(expM+tpM),'Expenses (Month)'),
+    stat(money(incM+admM-expM-tpM),'Net (Month)')
+  ));
+  const card=el('div',{class:'card'}); card.appendChild(el('h2',{},'Classes / Subjects'));
+  const tw=el('div',{class:'tablewrap'}); const tbl=el('table');
+  tbl.appendChild(el('tr',{},el('th',{},'Institute'),el('th',{},'Subject/Grade'),el('th',{},'Teacher'),el('th',{},'Students')));
+  DB.classes.forEach(c=>{ const t=DB.teachers.find(x=>x.id===c.teacherId); const sc=DB.students.filter(s=>isEnrolled(s,c.id)).length;
+    tbl.appendChild(el('tr',{},el('td',{},c.institute),el('td',{},c.name),el('td',{},t?t.firstName+' '+(t.lastName||''):'—'),el('td',{},String(sc)))); });
+  tw.appendChild(tbl); card.appendChild(tw); wrap.appendChild(card);
+  return wrap;
+}
+function stat(v,l){ return el('div',{class:'stat'},el('b',{},String(v)),el('span',{},l)); }
+
+/* ---------- CLASSES/SUBJECTS ---------- */
+function viewClasses(){
+  const wrap=el('div'); const card=el('div',{class:'card'}); card.appendChild(el('h2',{},'Add / Edit Subject or Grade'));
+  let editingId=null; const grid=el('div',{class:'grid'});
+  const instSel=el('select'); INSTITUTES.forEach(i=>instSel.appendChild(el('option',{value:i},i)));
+  const nameInp=el('input',{placeholder:'e.g. Mathematics, Grade 8'});
+  const teacherSel=el('select'); teacherSel.appendChild(el('option',{value:''},'— none —')); DB.teachers.forEach(t=>teacherSel.appendChild(el('option',{value:t.id},t.no+' - '+t.firstName+' '+(t.lastName||''))));
+  const shareInp=el('input',{type:'number',value:SETTINGS.defaultShare});
+  const monthlyInp=el('input',{type:'number',placeholder:'Monthly fee'});
+  const dailyInp=el('input',{type:'number',placeholder:'Daily fee'});
+  [['Institute',instSel],['Subject/Grade Name',nameInp],['Teacher',teacherSel],['Teacher Share %',shareInp],['Monthly Fee',monthlyInp],['Daily Fee',dailyInp]].forEach(([l,i])=>{ const h=el('div');h.appendChild(el('label',{},l));h.appendChild(i);grid.appendChild(h); });
+  card.appendChild(grid);
+  const saveBtn=el('button',{class:'btn',onclick:()=>{
+    if(!nameInp.value){notify('Enter a name');return;}
+    const rec={institute:instSel.value,name:nameInp.value,teacherId:teacherSel.value,sharePercent:shareInp.value,monthlyFee:monthlyInp.value,dailyFee:dailyInp.value};
+    if(editingId){ const i=DB.classes.findIndex(c=>c.id===editingId); DB.classes[i]=Object.assign(DB.classes[i],rec); }
+    else { rec.id=uid(); DB.classes.push(rec); }
+    save('classes'); editingId=null; render();
+  }},'Save'); card.appendChild(saveBtn); wrap.appendChild(card);
+
+  const listCard=el('div',{class:'card'}); listCard.appendChild(el('h2',{},'All Subjects / Classes'));
+  const tw=el('div',{class:'tablewrap'}); const tbl=el('table');
+  tbl.appendChild(el('tr',{},el('th',{},'Institute'),el('th',{},'Name'),el('th',{},'Teacher'),el('th',{},'Share %'),el('th',{},'Monthly'),el('th',{},'Daily'),el('th',{},'')));
+  DB.classes.forEach(c=>{ const t=DB.teachers.find(x=>x.id===c.teacherId); const tr=el('tr');
+    tr.appendChild(el('td',{},c.institute)); tr.appendChild(el('td',{},c.name)); tr.appendChild(el('td',{},t?t.firstName+' '+(t.lastName||''):'—'));
+    tr.appendChild(el('td',{},String(c.sharePercent||SETTINGS.defaultShare)+'%')); tr.appendChild(el('td',{},money(c.monthlyFee))); tr.appendChild(el('td',{},money(c.dailyFee)));
+    const btns=el('div',{class:'row'});
+    btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('edit this subject/class', ()=>{ instSel.value=c.institute; nameInp.value=c.name; teacherSel.value=c.teacherId||''; shareInp.value=c.sharePercent||SETTINGS.defaultShare; monthlyInp.value=c.monthlyFee||''; dailyInp.value=c.dailyFee||''; editingId=c.id; window.scrollTo(0,0); }); }},'Edit'));
+    btns.appendChild(el('button',{class:'btn danger',onclick:()=>{ confirmAdmin('delete this subject/class', ()=>{ DB.classes=DB.classes.filter(x=>x.id!==c.id); save('classes'); render(); }); }},'Delete'));
+    const td=el('td',{}); td.appendChild(btns); tr.appendChild(td); tbl.appendChild(tr);
+  });
+  tw.appendChild(tbl); listCard.appendChild(tw); wrap.appendChild(listCard);
+  return wrap;
+}
+
+/* ---------- TEACHERS / STUDENTS / STAFF ---------- */
+function viewPerson(kind){
+  const wrap=el('div'); const card=el('div',{class:'card'}); let editingId=null;
+  card.appendChild(el('h2',{}, kind==='teachers'?'Add / Edit Teacher':kind==='students'?'Add / Edit Student':'Add / Edit Staff'));
+  const grid=el('div',{class:'grid'}); const f={};
+  function field(l,key,type='text',opts=null){ const h=el('div'); h.appendChild(el('label',{},l)); let i; if(opts){ i=el('select'); opts.forEach(o=>i.appendChild(el('option',{value:o},o))); } else i=el('input',{type}); f[key]=i; h.appendChild(i); grid.appendChild(h); }
+  field('First Name','firstName'); field('Last Name','lastName'); field('Date of Birth','dob','date'); field('Joined Date','joinedDate','date'); field('Address','address');
+  if(kind==='teachers'){ field('Subject','subject'); field('NIC','nic'); field('Qualifications','qualifications'); }
+  if(kind==='students'){ field("Father's Name",'fatherName'); field("Mother's Name",'motherName'); field('Skills','skills'); field('Payment Type','paymentType',null,['Monthly','Daily','Free Card']); }
+  if(kind==='staff'){ field('Role','role'); field('NIC','nic'); field('Payment Type','paymentType',null,['Monthly','Daily']); }
+  card.appendChild(grid);
+
+  let enrollments=[]; let enrollWrap; let staffInstitutes=[]; let staffInstWrap;
+  if(kind==='staff'){
+    card.appendChild(el('label',{},'Business Units (a staff member can work in more than one)'));
+    staffInstWrap=el('div',{class:'cb-list'});
+    INSTITUTES.forEach(inst=>{ const cb=el('input',{type:'checkbox',value:inst});
+      cb.onchange=()=>{ staffInstitutes = cb.checked ? staffInstitutes.concat(inst) : staffInstitutes.filter(x=>x!==inst); };
+      staffInstWrap.appendChild(el('div',{class:'cb-item'},cb,document.createTextNode(inst))); });
+    card.appendChild(staffInstWrap);
+  }
+  if(kind==='students'){
+    card.appendChild(el('label',{},'Enrolled Subjects / Classes (set a custom fee if this student pays differently — e.g. by ICT knowledge level at TechLife)'));
+    enrollWrap=el('div',{class:'cb-list'}); enrollWrap.style.flexDirection='column'; enrollWrap.style.alignItems='stretch';
+    DB.classes.forEach(c=>{
+      const row=el('div',{class:'cb-item'}); row.style.cssText='flex-direction:column;align-items:stretch;width:100%;';
+      const top=el('div',{class:'row'});
+      const cb=el('input',{type:'checkbox',value:c.id});
+      top.appendChild(cb); top.appendChild(document.createTextNode(c.institute+': '+c.name));
+      row.appendChild(top);
+      const detail=el('div',{class:'grid',style:'display:none;margin-top:6px'});
+      let levelSel=null;
+      if(c.institute==='TechLife IT Academy'){ levelSel=el('select'); ['','Beginner','Intermediate','Advanced'].forEach(o=>levelSel.appendChild(el('option',{value:o},o||'— level —')));
+        const h=el('div');h.appendChild(el('label',{},'ICT Level'));h.appendChild(levelSel);detail.appendChild(h); }
+      const monthlyOv=el('input',{type:'number',placeholder:'Monthly fee (blank = default '+money(c.monthlyFee)+')'});
+      const dailyOv=el('input',{type:'number',placeholder:'Daily fee (blank = default '+money(c.dailyFee)+')'});
+      const h1=el('div');h1.appendChild(el('label',{},'Custom Monthly Fee'));h1.appendChild(monthlyOv);detail.appendChild(h1);
+      const h2=el('div');h2.appendChild(el('label',{},'Custom Daily Fee'));h2.appendChild(dailyOv);detail.appendChild(h2);
+      row.appendChild(detail);
+      function sync(){ enrollments = enrollments.filter(e=>e.classId!==c.id); if(cb.checked) enrollments.push({classId:c.id, level:levelSel?levelSel.value:'', monthlyFee:monthlyOv.value, dailyFee:dailyOv.value}); }
+      cb.onchange=()=>{ detail.style.display=cb.checked?'grid':'none'; sync(); };
+      if(levelSel) levelSel.onchange=sync; monthlyOv.onchange=sync; dailyOv.onchange=sync;
+      row._refresh=(en)=>{ cb.checked=!!en; detail.style.display=en?'grid':'none'; if(en){ if(levelSel) levelSel.value=en.level||''; monthlyOv.value=en.monthlyFee||''; dailyOv.value=en.dailyFee||''; } else { if(levelSel) levelSel.value=''; monthlyOv.value=''; dailyOv.value=''; } };
+      row._classId=c.id;
+      enrollWrap.appendChild(row);
+    });
+    card.appendChild(enrollWrap);
+  }
+  let photoData='';
+  card.appendChild(el('label',{},'Photo'));
+  const photoWrap=el('div'); photoWrap.appendChild(photoInput('',(d)=>{photoData=d;})); card.appendChild(photoWrap);
+
+  const saveBtn=el('button',{class:'btn',onclick:()=>{
+    if(!f.firstName.value){notify('First name required');return;}
+    const rec={}; for(const k in f) rec[k]=f[k].value; rec.photo=photoData;
+    if(kind==='students') rec.enrollments=enrollments.slice();
+    if(kind==='staff') rec.institutes=staffInstitutes.slice();
+    if(editingId){ const arr=DB[kind]; const i=arr.findIndex(x=>x.id===editingId); DB[kind][i]=Object.assign(DB[kind][i],rec); }
+    else { rec.id=uid(); rec.status='active'; rec.no=genNo(kind==='teachers'?'T':kind==='students'?'S':'F', DB[kind]); DB[kind].push(rec); }
+    save(kind); editingId=null; render();
+  }},'Save'); card.appendChild(saveBtn); wrap.appendChild(card);
+
+  const listCard=el('div',{class:'card'}); listCard.appendChild(el('h2',{},'All '+kind[0].toUpperCase()+kind.slice(1)));
+  const tw=el('div',{class:'tablewrap'}); const tbl=el('table');
+  let heads=['Photo','No','Name','Age'];
+  if(kind==='teachers') heads=heads.concat(['Subject','NIC','Qualifications']);
+  if(kind==='students') heads=heads.concat(['Classes','Father','Mother','Skills','Payment']);
+  if(kind==='staff') heads=heads.concat(['Business Units','Role','NIC','Payment']);
+  heads.push('Status',''); const hr=el('tr'); heads.forEach(h=>hr.appendChild(el('th',{},h))); tbl.appendChild(hr);
+
+  DB[kind].forEach(p=>{
+    const tr=el('tr'); if(p.status==='inactive') tr.className='inactive-row';
+    tr.appendChild(el('td',{}, p.photo?el('img',{class:'thumb',src:p.photo}):el('span',{},'—')));
+    tr.appendChild(el('td',{},p.no||'')); tr.appendChild(el('td',{},p.firstName+' '+(p.lastName||''))); tr.appendChild(el('td',{},String(age(p.dob))));
+    if(kind==='teachers') tr.appendChild(el('td',{},p.subject||'')), tr.appendChild(el('td',{},p.nic||'')), tr.appendChild(el('td',{},p.qualifications||''));
+    if(kind==='students'){ const names=normalizeEnrollments(p).map(e=>{const c=DB.classes.find(x=>x.id===e.classId); return c?(c.name+(e.level?' ('+e.level+')':'')):'';}).filter(Boolean).join(', ');
+      tr.appendChild(el('td',{},names)); tr.appendChild(el('td',{},p.fatherName||'')); tr.appendChild(el('td',{},p.motherName||'')); tr.appendChild(el('td',{},p.skills||'')); tr.appendChild(el('td',{},p.paymentType||'')); }
+    if(kind==='staff'){ tr.appendChild(el('td',{},(p.institutes||[]).join(', '))); tr.appendChild(el('td',{},p.role||'')); tr.appendChild(el('td',{},p.nic||'')); tr.appendChild(el('td',{},p.paymentType||'')); }
+    tr.appendChild(el('td',{}, el('span',{class:'pill'}, p.status||'active')));
+    const btns=el('div',{class:'row'});
+    btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('edit this record', ()=>{
+      for(const k in f) f[k].value=p[k]||'';
+      if(kind==='students'){ enrollments=normalizeEnrollments(p).map(e=>Object.assign({},e)); Array.from(enrollWrap.children).forEach(row=>{ if(row._refresh) row._refresh(enrollments.find(e=>e.classId===row._classId)); }); }
+      if(kind==='staff'){ staffInstitutes=(p.institutes||[]).slice(); staffInstWrap.querySelectorAll('input[type=checkbox]').forEach(cb=>cb.checked=staffInstitutes.includes(cb.value)); }
+      photoData=p.photo||''; if(photoWrap._setPreview) photoWrap._setPreview(photoData); editingId=p.id; window.scrollTo(0,0);
+    }); }},'Edit'));
+    btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ p.status = p.status==='inactive'?'active':'inactive'; save(kind); render(); }}, p.status==='inactive'?'Activate':'Deactivate'));
+    btns.appendChild(el('button',{class:'btn danger',onclick:()=>{ confirmAdmin('delete this record', ()=>{ DB[kind]=DB[kind].filter(x=>x.id!==p.id); save(kind); render(); }); }},'Delete'));
+    const td=el('td',{}); td.appendChild(btns); tr.appendChild(td); tbl.appendChild(tr);
+  });
+  tw.appendChild(tbl); listCard.appendChild(tw); wrap.appendChild(listCard);
+  return wrap;
+}
+
+/* ---------- ATTENDANCE ---------- */
+function viewAttendance(){
+  const wrap=el('div'); const card=el('div',{class:'card'}); card.appendChild(el('h2',{},'Mark Attendance'));
+  const grid=el('div',{class:'grid'});
+  const typeSel=el('select'); ['Student/Teacher (by Subject)','Staff'].forEach(t=>typeSel.appendChild(el('option',{value:t},t)));
+  const classSel=el('select'); DB.classes.forEach(c=>classSel.appendChild(el('option',{value:c.id},c.institute+': '+c.name)));
+  const dateInput=el('input',{type:'date',value:new Date().toISOString().slice(0,10)});
+  [['Mode',typeSel],['Subject/Class',classSel],['Date',dateInput]].forEach(([l,i])=>{ const h=el('div');h.appendChild(el('label',{},l));h.appendChild(i);grid.appendChild(h); });
+  card.appendChild(grid);
+  const listDiv=el('div',{class:'tablewrap'}); card.appendChild(listDiv); wrap.appendChild(card);
+
+  function mark(personId,personType,classId,date,status){
+    const idx=DB.attendance.findIndex(a=>a.personId===personId&&a.date===date&&a.classId===classId);
+    if(idx>=0) DB.attendance[idx].status=status; else DB.attendance.push({id:uid(),personId,personType,classId:classId||null,date,status});
+    save('attendance'); renderList();
+  }
+  function renderList(){
+    listDiv.innerHTML=''; const date=dateInput.value; const tbl=el('table');
+    tbl.appendChild(el('tr',{},el('th',{},'Name'),el('th',{},'Status'),el('th',{},'')));
+    let people=[];
+    if(typeSel.value==='Staff'){ classSel.parentElement.style.display='none'; people=DB.staff.filter(s=>s.status!=='inactive').map(s=>({p:s,type:'staff',classId:null})); }
+    else { classSel.parentElement.style.display='block'; const c=DB.classes.find(x=>x.id===classSel.value); if(c){ const t=DB.teachers.find(x=>x.id===c.teacherId); if(t) people.push({p:t,type:'teacher',classId:c.id});
+      DB.students.filter(s=>s.status!=='inactive'&&isEnrolled(s,c.id)).forEach(s=>people.push({p:s,type:'student',classId:c.id})); } }
+    people.forEach(({p,type,classId})=>{ const existing=DB.attendance.find(a=>a.personId===p.id&&a.date===date&&a.classId===classId); const status=existing?existing.status:'unmarked';
+      const tr=el('tr'); tr.appendChild(el('td',{},(type==='teacher'?'👨‍🏫 ':'')+p.firstName+' '+(p.lastName||'')));
+      tr.appendChild(el('td',{},el('span',{class:'pill'},status)));
+      const btns=el('div',{class:'row'}); ['present','absent'].forEach(s=>btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>mark(p.id,type,classId,date,s)},s)));
+      const td=el('td',{}); td.appendChild(btns); tr.appendChild(td); tbl.appendChild(tr); });
+    listDiv.appendChild(tbl);
+  }
+  typeSel.onchange=renderList; classSel.onchange=renderList; dateInput.onchange=renderList; renderList();
+  return wrap;
+}
+
+/* ---------- TEACHER PAYMENTS ---------- */
+function viewTPay(){
+  const wrap=el('div'); const card=el('div',{class:'card'}); card.appendChild(el('h2',{},'Record Teacher Payment'));
+  let editingId=null;
+  const grid=el('div',{class:'grid'});
+  const teacherSel=el('select'); DB.teachers.forEach(t=>teacherSel.appendChild(el('option',{value:t.id},t.no+' - '+t.firstName+' '+(t.lastName||''))));
+  const classSel=el('select'); classSel.appendChild(el('option',{value:''},'— general —')); DB.classes.forEach(c=>classSel.appendChild(el('option',{value:c.id},c.name)));
+  const catSel=el('select'); ["From Daily Income","From Owner's Hand","For Owner's Children"].forEach(c=>catSel.appendChild(el('option',{value:c},c)));
+  const amtInput=el('input',{type:'number',placeholder:'Amount'}); const dateInput=el('input',{type:'date',value:new Date().toISOString().slice(0,10)}); const noteInput=el('input',{placeholder:'Note (optional)'});
+  [['Teacher',teacherSel],['Subject/Class',classSel],['Category',catSel],['Amount',amtInput],['Date',dateInput],['Note',noteInput]].forEach(([l,i])=>{ const h=el('div');h.appendChild(el('label',{},l));h.appendChild(i);grid.appendChild(h); });
+  card.appendChild(grid);
+  card.appendChild(el('p',{class:'small'},'Tip: a teacher earns '+SETTINGS.defaultShare+'% (default, editable per subject) of the income their subject brings in — see Reports for the calculated figure.'));
+  card.appendChild(el('button',{class:'btn',onclick:()=>{ if(!teacherSel.value||!amtInput.value){notify('Select teacher and amount');return;}
+    const rec={teacherId:teacherSel.value,classId:classSel.value||null,category:catSel.value,amount:amtInput.value,date:dateInput.value,note:noteInput.value};
+    if(editingId){ const i=DB.tpay.findIndex(x=>x.id===editingId); DB.tpay[i]=Object.assign(DB.tpay[i],rec); editingId=null; } else { rec.id=uid(); DB.tpay.push(rec); }
+    save('tpay'); render(); }},'Save Payment'));
+  wrap.appendChild(card);
+
+  const listCard=el('div',{class:'card'}); listCard.appendChild(el('h2',{},'Payment History'));
+  const tw=el('div',{class:'tablewrap'}); const tbl=el('table');
+  tbl.appendChild(el('tr',{},el('th',{},'Date'),el('th',{},'Teacher'),el('th',{},'Subject'),el('th',{},'Category'),el('th',{},'Amount'),el('th',{},'')));
+  DB.tpay.slice().sort((a,b)=>b.date.localeCompare(a.date)).forEach(p=>{ const t=DB.teachers.find(x=>x.id===p.teacherId); const c=DB.classes.find(x=>x.id===p.classId);
+    const tr=el('tr'); tr.appendChild(el('td',{},p.date)); tr.appendChild(el('td',{},t?t.firstName+' '+(t.lastName||''):'(removed)')); tr.appendChild(el('td',{},c?c.name:'—'));
+    tr.appendChild(el('td',{},el('span',{class:'pill'},p.category))); tr.appendChild(el('td',{},money(p.amount)));
+    const btns=el('div',{class:'row'});
+    btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('edit this payment record', ()=>{ teacherSel.value=p.teacherId; classSel.value=p.classId||''; catSel.value=p.category; amtInput.value=p.amount; dateInput.value=p.date; noteInput.value=p.note||''; editingId=p.id; window.scrollTo(0,0); }); }},'Edit'));
+    btns.appendChild(el('button',{class:'btn danger',onclick:()=>{ confirmAdmin('delete this payment record', ()=>{ DB.tpay=DB.tpay.filter(x=>x.id!==p.id); save('tpay'); render(); }); }},'Delete'));
+    const td=el('td',{}); td.appendChild(btns); tr.appendChild(td); tbl.appendChild(tr); });
+  tw.appendChild(tbl); listCard.appendChild(tw);
+  listCard.appendChild(el('p',{class:'small'},'Total recorded: '+money(DB.tpay.reduce((s,p)=>s+Number(p.amount),0))));
+  wrap.appendChild(listCard); return wrap;
+}
+
+/* ---------- EXPENSES ---------- */
+function viewExp(){
+  const wrap=el('div'); const card=el('div',{class:'card'}); card.appendChild(el('h2',{},'Record Expense'));
+  let editingId=null;
+  const grid=el('div',{class:'grid'}); const catSel=el('select'); ["From Daily Income","From Owner's Hand","Staff Salary"].forEach(c=>catSel.appendChild(el('option',{value:c},c)));
+  const descInput=el('input',{placeholder:'Description'}); const amtInput=el('input',{type:'number',placeholder:'Amount'}); const dateInput=el('input',{type:'date',value:new Date().toISOString().slice(0,10)});
+  [['Category',catSel],['Description',descInput],['Amount',amtInput],['Date',dateInput]].forEach(([l,i])=>{ const h=el('div');h.appendChild(el('label',{},l));h.appendChild(i);grid.appendChild(h); });
+  card.appendChild(grid);
+  card.appendChild(el('button',{class:'btn',onclick:()=>{ if(!amtInput.value){notify('Enter amount');return;}
+    const rec={category:catSel.value,description:descInput.value,amount:amtInput.value,date:dateInput.value};
+    if(editingId){ const i=DB.exp.findIndex(x=>x.id===editingId); DB.exp[i]=Object.assign(DB.exp[i],rec); editingId=null; } else { rec.id=uid(); DB.exp.push(rec); }
+    save('exp'); render(); }},'Save Expense'));
+  wrap.appendChild(card);
+  const listCard=el('div',{class:'card'}); listCard.appendChild(el('h2',{},'Expense History'));
+  const tw=el('div',{class:'tablewrap'}); const tbl=el('table');
+  tbl.appendChild(el('tr',{},el('th',{},'Date'),el('th',{},'Category'),el('th',{},'Description'),el('th',{},'Amount'),el('th',{},'')));
+  DB.exp.slice().sort((a,b)=>b.date.localeCompare(a.date)).forEach(p=>{ const tr=el('tr'); tr.appendChild(el('td',{},p.date)); tr.appendChild(el('td',{},el('span',{class:'pill'},p.category)));
+    tr.appendChild(el('td',{},p.description||'')); tr.appendChild(el('td',{},money(p.amount)));
+    const btns=el('div',{class:'row'});
+    btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('edit this expense record', ()=>{ catSel.value=p.category; descInput.value=p.description||''; amtInput.value=p.amount; dateInput.value=p.date; editingId=p.id; window.scrollTo(0,0); }); }},'Edit'));
+    btns.appendChild(el('button',{class:'btn danger',onclick:()=>{ confirmAdmin('delete this expense record', ()=>{ DB.exp=DB.exp.filter(x=>x.id!==p.id); save('exp'); render(); }); }},'Delete'));
+    const td=el('td',{}); td.appendChild(btns); tr.appendChild(td); tbl.appendChild(tr); });
+  tw.appendChild(tbl); listCard.appendChild(tw);
+  listCard.appendChild(el('p',{class:'small'},'Total recorded: '+money(DB.exp.reduce((s,p)=>s+Number(p.amount),0))));
+  wrap.appendChild(listCard); return wrap;
+}
+
+/* ---------- ADMISSIONS ---------- */
+function viewAdmissions(){
+  const wrap=el('div'); const card=el('div',{class:'card'}); card.appendChild(el('h2',{},'Record Admission Fee'));
+  let editingId=null;
+  const grid=el('div',{class:'grid'}); const studentSel=el('select'); DB.students.forEach(s=>studentSel.appendChild(el('option',{value:s.id},s.no+' - '+s.firstName+' '+(s.lastName||''))));
+  const amtInput=el('input',{type:'number',value:SETTINGS.admissionFee}); const dateInput=el('input',{type:'date',value:new Date().toISOString().slice(0,10)}); const noteInput=el('input',{placeholder:'Note (optional)'});
+  [['Student',studentSel],['Amount',amtInput],['Date',dateInput],['Note',noteInput]].forEach(([l,i])=>{ const h=el('div');h.appendChild(el('label',{},l));h.appendChild(i);grid.appendChild(h); });
+  card.appendChild(grid);
+  card.appendChild(el('button',{class:'btn',onclick:()=>{ if(!studentSel.value||!amtInput.value){notify('Select student and amount');return;}
+    const rec={studentId:studentSel.value,amount:amtInput.value,date:dateInput.value,note:noteInput.value};
+    if(editingId){ const i=DB.admissions.findIndex(x=>x.id===editingId); DB.admissions[i]=Object.assign(DB.admissions[i],rec); editingId=null; }
+    else { rec.id=uid(); DB.admissions.push(rec); const s=DB.students.find(x=>x.id===studentSel.value); if(s){s.admissionPaid='Yes'; save('students');} }
+    save('admissions'); render(); }},'Save Admission'));
+  wrap.appendChild(card);
+  const listCard=el('div',{class:'card'}); listCard.appendChild(el('h2',{},'Admission History'));
+  const tw=el('div',{class:'tablewrap'}); const tbl=el('table');
+  tbl.appendChild(el('tr',{},el('th',{},'Date'),el('th',{},'Student'),el('th',{},'Amount'),el('th',{},'Note'),el('th',{},'')));
+  DB.admissions.slice().sort((a,b)=>b.date.localeCompare(a.date)).forEach(p=>{ const s=DB.students.find(x=>x.id===p.studentId); const tr=el('tr');
+    tr.appendChild(el('td',{},p.date)); tr.appendChild(el('td',{},s?s.firstName+' '+(s.lastName||''):'(removed)')); tr.appendChild(el('td',{},money(p.amount))); tr.appendChild(el('td',{},p.note||''));
+    const btns=el('div',{class:'row'});
+    btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('edit this admission record', ()=>{ studentSel.value=p.studentId; amtInput.value=p.amount; dateInput.value=p.date; noteInput.value=p.note||''; editingId=p.id; window.scrollTo(0,0); }); }},'Edit'));
+    btns.appendChild(el('button',{class:'btn danger',onclick:()=>{ confirmAdmin('delete this admission record', ()=>{ DB.admissions=DB.admissions.filter(x=>x.id!==p.id); save('admissions'); render(); }); }},'Delete'));
+    const td=el('td',{}); td.appendChild(btns); tr.appendChild(td); tbl.appendChild(tr); });
+  tw.appendChild(tbl); listCard.appendChild(tw);
+  listCard.appendChild(el('p',{class:'small'},'Total recorded: '+money(DB.admissions.reduce((s,p)=>s+Number(p.amount),0))));
+  wrap.appendChild(listCard); return wrap;
+}
+
+/* ---------- INCOME (per student, per subject) ---------- */
+function viewIncome(){
+  const wrap=el('div'); const card=el('div',{class:'card'}); card.appendChild(el('h2',{},'Record Student Payment'));
+  let editingId=null;
+  const grid=el('div',{class:'grid'});
+  const instSel=el('select'); instSel.appendChild(el('option',{value:''},'All Institutes')); INSTITUTES.forEach(i=>instSel.appendChild(el('option',{value:i},i)));
+  const classSel=el('select'); classSel.appendChild(el('option',{value:''},'— select subject/class —'));
+  const studentSel=el('select'); studentSel.appendChild(el('option',{value:''},'— select student —'));
+  const sourceSel=el('select'); ['Monthly Fee','Daily Fee','Other'].forEach(s=>sourceSel.appendChild(el('option',{value:s},s)));
+  const amtInput=el('input',{type:'number',placeholder:'Amount'}); const dateInput=el('input',{type:'date',value:new Date().toISOString().slice(0,10)});
+  const forMonthWrap=el('div'); const forMonthInput=el('input',{type:'month',value:new Date().toISOString().slice(0,7)});
+  forMonthWrap.appendChild(el('label',{},'For Month (which billing month this covers)')); forMonthWrap.appendChild(forMonthInput);
+  [['Institute',instSel],['Subject/Class',classSel],['Student',studentSel],['Source',sourceSel],['Amount',amtInput],['Date Received',dateInput]].forEach(([l,i])=>{ const h=el('div');h.appendChild(el('label',{},l));h.appendChild(i);grid.appendChild(h); });
+  card.appendChild(grid); card.appendChild(forMonthWrap);
+  const noteEl=el('p',{class:'small'},''); card.appendChild(noteEl);
+
+  function refreshClasses(){ classSel.innerHTML=''; classSel.appendChild(el('option',{value:''},'— select subject/class —'));
+    DB.classes.filter(c=>!instSel.value||c.institute===instSel.value).forEach(c=>classSel.appendChild(el('option',{value:c.id},c.institute+': '+c.name)));
+    refreshStudents(); }
+  function refreshStudents(){ studentSel.innerHTML=''; studentSel.appendChild(el('option',{value:''},'— select student —'));
+    DB.students.filter(s=>s.status!=='inactive'&&isEnrolled(s,classSel.value)).forEach(s=>studentSel.appendChild(el('option',{value:s.id},s.no+' - '+s.firstName+' '+(s.lastName||''))));
+    updateNoteAndAmount(); }
+  function updateNoteAndAmount(){
+    const s=DB.students.find(x=>x.id===studentSel.value);
+    forMonthWrap.style.display = sourceSel.value==='Monthly Fee' ? 'block' : 'none';
+    if(s && s.paymentType==='Free Card') noteEl.textContent='This student is on a Free Card — no fee is normally expected.';
+    else if(s && classSel.value) amtInput.value = getFee(s, classSel.value, sourceSel.value) || amtInput.value, noteEl.textContent='';
+    else noteEl.textContent='';
+  }
+  instSel.onchange=refreshClasses; classSel.onchange=refreshStudents; studentSel.onchange=updateNoteAndAmount; sourceSel.onchange=updateNoteAndAmount;
+  refreshClasses();
+
+  const saveBtn=el('button',{class:'btn',onclick:()=>{
+    if(!studentSel.value||!classSel.value||!amtInput.value){ notify('Select subject, student and amount'); return; }
+    const s=DB.students.find(x=>x.id===studentSel.value);
+    if(sourceSel.value==='Monthly Fee' && !editingId){
+      const required=getFee(s,classSel.value,'Monthly Fee');
+      const already=DB.income.filter(e=>e.studentId===studentSel.value&&e.classId===classSel.value&&e.source==='Monthly Fee'&&e.forMonth===forMonthInput.value).reduce((sum,e)=>sum+Number(e.amount),0);
+      if(required>0 && already>=required){ notify('This student has already fully paid for '+forMonthInput.value+' — record blocked to avoid duplicate payment.'); return; }
+    }
+    const rec={studentId:studentSel.value,classId:classSel.value,source:sourceSel.value,amount:amtInput.value,date:dateInput.value,forMonth:sourceSel.value==='Monthly Fee'?forMonthInput.value:''};
+    if(editingId){ const i=DB.income.findIndex(x=>x.id===editingId); DB.income[i]=Object.assign(DB.income[i],rec); editingId=null; }
+    else { rec.id=uid(); DB.income.push(rec); }
+    save('income'); render();
+  }},'Save Payment'); card.appendChild(saveBtn);
+  wrap.appendChild(card);
+
+  // Monthly due/paid tracker
+  const dueCard=el('div',{class:'card'}); dueCard.appendChild(el('h2',{},'Monthly Payment Status'));
+  const monthInput=el('input',{type:'month',value:new Date().toISOString().slice(0,7)}); const mH=el('div'); mH.appendChild(el('label',{},'Month')); mH.appendChild(monthInput); dueCard.appendChild(mH);
+  const dueOut=el('div'); dueCard.appendChild(dueOut); wrap.appendChild(dueCard);
+  function renderDue(){
+    dueOut.innerHTML=''; const mp=monthInput.value;
+    const tw=el('div',{class:'tablewrap'}); const tbl=el('table');
+    tbl.appendChild(el('tr',{},el('th',{},'Student'),el('th',{},'Subject'),el('th',{},'Institute'),el('th',{},'Status'),el('th',{},'')));
+    DB.students.filter(s=>s.status!=='inactive'&&s.paymentType==='Monthly').forEach(s=>{
+      normalizeEnrollments(s).forEach(en=>{ const c=DB.classes.find(x=>x.id===en.classId); if(!c) return;
+        const required=getFee(s,c.id,'Monthly Fee');
+        const paidSum=DB.income.filter(e=>e.studentId===s.id&&e.classId===c.id&&e.source==='Monthly Fee'&&e.forMonth===mp).reduce((sum,e)=>sum+Number(e.amount),0);
+        const status = paidSum<=0 ? 'Due' : (paidSum>=required ? 'Paid' : 'Partial');
+        const tr=el('tr'); tr.appendChild(el('td',{},s.no+' - '+s.firstName+' '+(s.lastName||''))); tr.appendChild(el('td',{},c.name+(en.level?' ('+en.level+')':''))); tr.appendChild(el('td',{},c.institute));
+        tr.appendChild(el('td',{},el('span',{class:'pill'},status)));
+        const td=el('td',{});
+        if(status!=='Paid') td.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ instSel.value=c.institute; refreshClasses(); classSel.value=c.id; refreshStudents(); studentSel.value=s.id; sourceSel.value='Monthly Fee'; forMonthInput.value=mp; updateNoteAndAmount(); window.scrollTo(0,0); }},'Record Payment'));
+        tr.appendChild(td); tbl.appendChild(tr);
+      });
+    });
+    tw.appendChild(tbl); dueOut.appendChild(tw);
+  }
+  monthInput.onchange=renderDue; renderDue();
+
+  const listCard=el('div',{class:'card'}); listCard.appendChild(el('h2',{},'Payment History'));
+  const tw=el('div',{class:'tablewrap'}); const tbl=el('table');
+  tbl.appendChild(el('tr',{},el('th',{},'Date'),el('th',{},'For Month'),el('th',{},'Student'),el('th',{},'Subject'),el('th',{},'Source'),el('th',{},'Amount'),el('th',{},'')));
+  DB.income.slice().sort((a,b)=>b.date.localeCompare(a.date)).forEach(p=>{ const c=DB.classes.find(x=>x.id===p.classId); const s=DB.students.find(x=>x.id===p.studentId); const tr=el('tr');
+    tr.appendChild(el('td',{},p.date)); tr.appendChild(el('td',{},p.forMonth||'—')); tr.appendChild(el('td',{},s?s.no+' - '+s.firstName+' '+(s.lastName||''):'(removed)')); tr.appendChild(el('td',{},c?c.name:'(removed)')); tr.appendChild(el('td',{},el('span',{class:'pill'},p.source))); tr.appendChild(el('td',{},money(p.amount)));
+    const btns=el('div',{class:'row'});
+    btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('edit this payment record', ()=>{
+      instSel.value=c?c.institute:''; refreshClasses(); classSel.value=p.classId; refreshStudents(); studentSel.value=p.studentId; sourceSel.value=p.source; amtInput.value=p.amount; dateInput.value=p.date; forMonthInput.value=p.forMonth||new Date().toISOString().slice(0,7); updateNoteAndAmount(); editingId=p.id; window.scrollTo(0,0);
+    }); }},'Edit'));
+    btns.appendChild(el('button',{class:'btn danger',onclick:()=>{ confirmAdmin('delete this payment record', ()=>{ DB.income=DB.income.filter(x=>x.id!==p.id); save('income'); render(); }); }},'Delete'));
+    const td=el('td',{}); td.appendChild(btns); tr.appendChild(td); tbl.appendChild(tr); });
+  tw.appendChild(tbl); listCard.appendChild(tw);
+  listCard.appendChild(el('p',{class:'small'},'Total recorded: '+money(DB.income.reduce((s,p)=>s+Number(p.amount),0))));
+  wrap.appendChild(listCard); return wrap;
+}
+
+/* ---------- REPORTS ---------- */
+function shareOf(c){ return (c && c.sharePercent!==undefined && c.sharePercent!=='') ? Number(c.sharePercent) : SETTINGS.defaultShare; }
+function viewReports(){
+  const wrap=el('div');
+  const dCard=el('div',{class:'card'}); dCard.appendChild(el('h2',{},'Daily Income & Profit by Subject'));
+  const dateInput=el('input',{type:'date',value:new Date().toISOString().slice(0,10)}); const dH=el('div'); dH.appendChild(el('label',{},'Date')); dH.appendChild(dateInput); dCard.appendChild(dH);
+  const dOut=el('div'); dCard.appendChild(dOut); wrap.appendChild(dCard);
+  function renderDaily(){ dOut.innerHTML=''; const date=dateInput.value; const tw=el('div',{class:'tablewrap'}); const tbl=el('table');
+    tbl.appendChild(el('tr',{},el('th',{},'Subject'),el('th',{},'Income'),el('th',{},"Teacher's Cut"),el('th',{},'Profit')));
+    let tI=0,tC=0,tP=0; let rows='';
+    DB.classes.forEach(c=>{ const inc=DB.income.filter(e=>e.classId===c.id&&e.date===date).reduce((s,e)=>s+Number(e.amount),0); if(!inc) return; const cut=inc*shareOf(c)/100; const profit=inc-cut;
+      tI+=inc;tC+=cut;tP+=profit; tbl.appendChild(el('tr',{},el('td',{},c.institute+': '+c.name),el('td',{},money(inc)),el('td',{},money(cut)),el('td',{},money(profit))));
+      rows+='<tr><td>'+c.institute+': '+c.name+'</td><td>'+money(inc)+'</td><td>'+money(cut)+'</td><td>'+money(profit)+'</td></tr>'; });
+    const admToday=DB.admissions.filter(a=>a.date===date).reduce((s,a)=>s+Number(a.amount),0);
+    if(admToday){ tI+=admToday; tP+=admToday; tbl.appendChild(el('tr',{},el('td',{},'Admission Fees'),el('td',{},money(admToday)),el('td',{},money(0)),el('td',{},money(admToday))));
+      rows+='<tr><td>Admission Fees</td><td>'+money(admToday)+'</td><td>'+money(0)+'</td><td>'+money(admToday)+'</td></tr>'; }
+    tbl.appendChild(el('tr',{},el('td',{},el('b',{},'Total')),el('td',{},el('b',{},money(tI))),el('td',{},el('b',{},money(tC))),el('td',{},el('b',{},money(tP)))));
+    tw.appendChild(tbl); dOut.appendChild(tw);
+    const body='<h1>Daily Report — '+date+'</h1><table><tr><th>Subject</th><th>Income</th><th>Teacher\'s Cut</th><th>Profit</th></tr>'+rows+'<tr><td><b>Total</b></td><td><b>'+money(tI)+'</b></td><td><b>'+money(tC)+'</b></td><td><b>'+money(tP)+'</b></td></tr></table>';
+    const btnRow=el('div',{class:'row',style:'margin-top:10px'});
+    btnRow.appendChild(el('button',{class:'btn secondary',onclick:()=>exportReport('daily-report-'+date, body, 'jpg')},'Download as JPEG'));
+    btnRow.appendChild(el('button',{class:'btn secondary',onclick:()=>exportReport('daily-report-'+date, body, 'pdf')},'Download as PDF'));
+    dOut.appendChild(btnRow);
+  }
+  dateInput.onchange=renderDaily; renderDaily();
+
+  const mCard=el('div',{class:'card'}); mCard.appendChild(el('h2',{},'Monthly Income, Profit & Teacher Earnings'));
+  const monthInput=el('input',{type:'month',value:new Date().toISOString().slice(0,7)}); const mH=el('div'); mH.appendChild(el('label',{},'Month')); mH.appendChild(monthInput); mCard.appendChild(mH);
+  const mOut=el('div'); mCard.appendChild(mOut); wrap.appendChild(mCard);
+  function renderMonthly(){ mOut.innerHTML=''; const mp=monthInput.value;
+    mOut.appendChild(el('h2',{style:'font-size:13px;margin:0 0 6px'},'Month: '+mp));
+    const tw1=el('div',{class:'tablewrap'}); const tbl1=el('table');
+    tbl1.appendChild(el('tr',{},el('th',{},'Subject'),el('th',{},'Income'),el('th',{},"Teacher's Cut"),el('th',{},'Profit')));
+    let tI=0,tC=0,tP=0; const earnByTeacher={};
+    DB.classes.forEach(c=>{ const inc=DB.income.filter(e=>e.classId===c.id&&e.date.startsWith(mp)).reduce((s,e)=>s+Number(e.amount),0); const cut=inc*shareOf(c)/100; const profit=inc-cut;
+      if(c.teacherId) earnByTeacher[c.teacherId]=(earnByTeacher[c.teacherId]||0)+cut;
+      if(!inc) return; tI+=inc;tC+=cut;tP+=profit;
+      tbl1.appendChild(el('tr',{},el('td',{},c.institute+': '+c.name),el('td',{},money(inc)),el('td',{},money(cut)),el('td',{},money(profit)))); });
+    const admM=DB.admissions.filter(a=>a.date.startsWith(mp)).reduce((s,a)=>s+Number(a.amount),0);
+    if(admM){ tI+=admM; tP+=admM; tbl1.appendChild(el('tr',{},el('td',{},'Admission Fees'),el('td',{},money(admM)),el('td',{},money(0)),el('td',{},money(admM)))); }
+    tbl1.appendChild(el('tr',{},el('td',{},el('b',{},'Total')),el('td',{},el('b',{},money(tI))),el('td',{},el('b',{},money(tC))),el('td',{},el('b',{},money(tP)))));
+    tw1.appendChild(tbl1); mOut.appendChild(tw1);
+    mOut.appendChild(el('h2',{style:'font-size:13px;margin:14px 0 6px'},"Each Teacher's Earnings — Month: "+mp));
+    const tw2=el('div',{class:'tablewrap'}); const tbl2=el('table');
+    tbl2.appendChild(el('tr',{},el('th',{},'Teacher'),el('th',{},'Calculated Earning'),el('th',{},'Actually Paid'),el('th',{},'')));
+    DB.teachers.forEach(t=>{ const earn=earnByTeacher[t.id]||0; const tpayRows=DB.tpay.filter(p=>p.teacherId===t.id&&p.date.startsWith(mp)); const paid=tpayRows.reduce((s,p)=>s+Number(p.amount),0);
+      if(!earn&&!paid) return;
+      const tr=el('tr'); tr.appendChild(el('td',{},t.no+' - '+t.firstName+' '+(t.lastName||''))); tr.appendChild(el('td',{},money(earn))); tr.appendChild(el('td',{},money(paid)));
+      const btns=el('div',{class:'row'});
+      function buildSlipBody(){
+        const classRows=DB.classes.filter(c=>c.teacherId===t.id).map(c=>{ const inc=DB.income.filter(e=>e.classId===c.id&&e.date.startsWith(mp)).reduce((s,e)=>s+Number(e.amount),0); return {c,inc,cut:inc*shareOf(c)/100}; });
+        let body='<h1>Salary Slip — '+t.firstName+' '+(t.lastName||'')+' ('+t.no+')</h1><h2>Month: '+mp+'</h2>';
+        classRows.forEach(r=>{
+          body+='<h2>'+r.c.institute+': '+r.c.name+' — Income '+money(r.inc)+', Share '+shareOf(r.c)+'%, Earning '+money(r.cut)+'</h2>';
+          const payers=DB.income.filter(e=>e.classId===r.c.id&&e.date.startsWith(mp));
+          if(payers.length){ body+='<table><tr><th>Student</th><th>Source</th><th>Amount</th><th>Date</th></tr>';
+            payers.forEach(p=>{ const st=DB.students.find(x=>x.id===p.studentId); body+='<tr><td>'+(st?st.no+' - '+st.firstName+' '+(st.lastName||''):'(removed)')+'</td><td>'+p.source+'</td><td>'+money(p.amount)+'</td><td>'+p.date+'</td></tr>'; });
+            body+='</table>'; }
+          else body+='<p>No payments recorded this month.</p>';
+        });
+        body+='<h2>Total Calculated Earning: '+money(earn)+'</h2>';
+        body+='<h2>Payments Made to Teacher</h2><table><tr><th>Date</th><th>Category</th><th>Amount</th><th>Note</th></tr>';
+        tpayRows.forEach(p=>body+='<tr><td>'+p.date+'</td><td>'+p.category+'</td><td>'+money(p.amount)+'</td><td>'+(p.note||'')+'</td></tr>');
+        body+='<tr><td colspan="2"><b>Total Paid</b></td><td colspan="2"><b>'+money(paid)+'</b></td></tr></table>';
+        return body;
+      }
+      const slipFilename=(t.subject||'Subject')+' '+t.firstName+' '+(t.lastName||'')+' - '+new Date().toISOString().slice(0,10);
+      btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>exportReport(slipFilename, buildSlipBody(), 'jpg')},'JPEG'));
+      btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>exportReport(slipFilename, buildSlipBody(), 'pdf')},'PDF'));
+      const td=el('td',{}); td.appendChild(btns); tr.appendChild(td); tbl2.appendChild(tr); });
+    tw2.appendChild(tbl2); mOut.appendChild(tw2);
+  }
+  monthInput.onchange=renderMonthly; renderMonthly();
+  return wrap;
+}
+
+/* ---------- BACKUP / RESTORE (JSON export-import, e.g. from the earlier claude.ai version) ---------- */
+function exportAllDataJson(){
+  const payload={}; COLLECTION_KEYS.forEach(k=>payload[k]=DB[k]); payload.settings=SETTINGS;
+  const blob=new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
+  triggerDownload('institute-system-backup-'+new Date().toISOString().slice(0,10)+'.json', blob);
+}
+async function importDataJson(file, onDone){
+  try{
+    const text=await file.text(); const payload=JSON.parse(text);
+    let count=0;
+    for(const k of COLLECTION_KEYS){
+      const list=payload[k]||[];
+      for(const rec of list){ if(!rec.id) rec.id=uid(); await setDoc(doc(fsdb,k,rec.id), rec); count++; }
+    }
+    if(payload.settings) await setDoc(doc(fsdb,'settings','main'), Object.assign({admissionFee:500,defaultShare:80,adminPassword:'admin123'}, payload.settings));
+    onDone(null,count);
+  }catch(e){ onDone(e,0); }
+}
+
+/* ---------- SETTINGS ---------- */
+function viewSettings(){
+  const wrap=el('div');
+  const backupCard=el('div',{class:'card'}); backupCard.appendChild(el('h2',{},'Backup & Restore'));
+  backupCard.appendChild(el('p',{class:'small'},'Export a full backup anytime, or import a backup file (including one exported from an earlier version of this system) to load its data in here.'));
+  backupCard.appendChild(el('button',{class:'btn secondary',onclick:exportAllDataJson},'Export All Data (JSON)'));
+  const importInp=el('input',{type:'file',accept:'.json',style:'margin-top:8px'});
+  const importStatus=el('p',{class:'small'},'');
+  backupCard.appendChild(importInp);
+  backupCard.appendChild(el('button',{class:'btn secondary',onclick:()=>{
+    const f=importInp.files[0]; if(!f){ notify('Choose a JSON file first'); return; }
+    importStatus.textContent='Importing...';
+    importDataJson(f,(err,count)=>{ importStatus.textContent = err? 'Import failed — check the file.' : 'Imported '+count+' records.'; if(!err) notify('Import complete.'); });
+  }},'Import Data (JSON)'));
+  backupCard.appendChild(importStatus);
+  wrap.appendChild(backupCard);
+
+  const card=el('div',{class:'card'}); card.appendChild(el('h2',{},'Settings'));
+  const grid=el('div',{class:'grid'});
+  const feeInp=el('input',{type:'number',value:SETTINGS.admissionFee}); const shareInp=el('input',{type:'number',value:SETTINGS.defaultShare});
+  const curPwd=el('input',{type:'password',placeholder:'Current admin password'}); const newPwd=el('input',{type:'password',placeholder:'New admin password (optional)'});
+  [['Default Admission Fee',feeInp],['Default Teacher Share %',shareInp],['Current Admin Password',curPwd],['New Admin Password',newPwd]].forEach(([l,i])=>{ const h=el('div');h.appendChild(el('label',{},l));h.appendChild(i);grid.appendChild(h); });
+  card.appendChild(grid);
+  card.appendChild(el('button',{class:'btn',onclick:()=>{
+    if(curPwd.value!==SETTINGS.adminPassword){ notify('Current password incorrect'); return; }
+    SETTINGS.admissionFee=feeInp.value||SETTINGS.admissionFee; SETTINGS.defaultShare=shareInp.value||SETTINGS.defaultShare;
+    if(newPwd.value) SETTINGS.adminPassword=newPwd.value;
+    saveSettings(); notify('Settings saved.'); render();
+  }},'Save Settings'));
+  card.appendChild(el('p',{class:'small'},'Default admin password is admin123 unless changed. This password is required to edit or delete any record.'));
+  wrap.appendChild(card); return wrap;
+}
+
+render();
+</script>
+</body>
+</html>
