@@ -399,20 +399,29 @@ function viewPerson(kind){
     card.appendChild(staffInstWrap);
   }
   if(kind==='students'){
-    card.appendChild(el('label',{},'Enrolled Subjects / Classes (set a custom fee if this student pays differently — e.g. by ICT knowledge level at TechLife)'));
+    card.appendChild(el('label',{},'Enrolled Subjects / Classes — pick from the dropdown, then set a custom fee if this student pays differently (e.g. by ICT level at TechLife)'));
     const enrollBar=el('div',{class:'filters'});
     const enInst=el('select'); enInst.appendChild(el('option',{value:''},'Institute: All')); INSTITUTES.forEach(i=>enInst.appendChild(el('option',{value:i},i)));
-    const enSearch=el('input',{type:'text',placeholder:'Search subject / grade...'});
-    enrollBar.appendChild(enInst); enrollBar.appendChild(enSearch); card.appendChild(enrollBar);
+    const enSubj=el('select');
+    enrollBar.appendChild(enInst); enrollBar.appendChild(enSubj); card.appendChild(enrollBar);
     const enCount=el('div',{class:'small',style:'margin-bottom:6px'}); card.appendChild(enCount);
-    applyEnrollFilter=function(){ const q=enSearch.value.toLowerCase(); let sel=0; Array.from(enrollWrap.children).forEach(row=>{ const checked=row._cb&&row._cb.checked; if(checked) sel++; const ok=(!enInst.value||row._inst===enInst.value)&&(!q||row._text.includes(q)); row.style.display=(ok||checked)?'':'none'; }); enCount.textContent=sel+' selected (selected subjects always stay visible)'; };
-    enInst.onchange=()=>applyEnrollFilter(); enSearch.oninput=()=>applyEnrollFilter();
+    applyEnrollFilter=function(){
+      let sel=0; const rowsAll=Array.from(enrollWrap.children);
+      rowsAll.forEach(row=>{ const checked=row._cb&&row._cb.checked; if(checked) sel++; row.style.display=checked?'':'none'; });
+      enSubj.innerHTML=''; enSubj.appendChild(el('option',{value:''},'+ Add a subject / grade...'));
+      rowsAll.filter(row=>!row._cb.checked&&(!enInst.value||row._inst===enInst.value)).forEach(row=>enSubj.appendChild(el('option',{value:row._classId},(enInst.value?'':row._inst+': ')+row._name)));
+      enCount.textContent = sel ? sel+' subject'+(sel===1?'':'s')+' selected' : 'No subjects selected yet — choose one from the dropdown above.';
+    };
+    enInst.onchange=()=>applyEnrollFilter();
+    enSubj.onchange=()=>{ const id=enSubj.value; if(!id) return; const row=Array.from(enrollWrap.children).find(r=>r._classId===id); if(row){ row._cb.checked=true; row._cb.onchange(); } };
     enrollWrap=el('div',{class:'cb-list'}); enrollWrap.style.flexDirection='column'; enrollWrap.style.alignItems='stretch';
     DB.classes.forEach(c=>{
       const row=el('div',{class:'cb-item'}); row.style.cssText='flex-direction:column;align-items:stretch;width:100%;';
       const top=el('div',{class:'row'});
       const cb=el('input',{type:'checkbox',value:c.id});
-      top.appendChild(cb); top.appendChild(document.createTextNode(c.institute+': '+c.name));
+      cb.style.display='none'; top.style.justifyContent='space-between';
+      top.appendChild(el('b',{},c.institute+': '+c.name)); top.appendChild(cb);
+      top.appendChild(el('button',{type:'button',class:'btn small danger',onclick:()=>{ cb.checked=false; cb.onchange(); }},'Remove'));
       row.appendChild(top);
       const detail=el('div',{class:'grid',style:'display:none;margin-top:6px'});
       let levelSel=null;
@@ -427,7 +436,7 @@ function viewPerson(kind){
       cb.onchange=()=>{ detail.style.display=cb.checked?'grid':'none'; sync(); applyEnrollFilter(); };
       if(levelSel) levelSel.onchange=sync; monthlyOv.onchange=sync; dailyOv.onchange=sync;
       row._refresh=(en)=>{ cb.checked=!!en; detail.style.display=en?'grid':'none'; if(en){ if(levelSel) levelSel.value=en.level||''; monthlyOv.value=en.monthlyFee||''; dailyOv.value=en.dailyFee||''; } else { if(levelSel) levelSel.value=''; monthlyOv.value=''; dailyOv.value=''; } };
-      row._classId=c.id; row._cb=cb; row._inst=c.institute; row._text=(c.institute+' '+c.name).toLowerCase();
+      row._classId=c.id; row._cb=cb; row._inst=c.institute; row._name=c.name;
       enrollWrap.appendChild(row);
     });
     card.appendChild(enrollWrap); applyEnrollFilter();
