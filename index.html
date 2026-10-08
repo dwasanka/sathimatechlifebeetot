@@ -51,7 +51,7 @@ th{color:var(--muted);font-weight:600;}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
-<header><h1>🎓 Institute Management System</h1><p>TechLife IT Academy · Sathima Education Institute · BEETOT English Medium Pre School</p></header>
+<header><h1>🎓 Institute Management System</h1><p>TechLife IT Academy · Sathima · BEETOT English Medium Pre School</p></header>
 <nav id="tabs"></nav>
 <main id="app"></main>
 <script type="module">
@@ -69,7 +69,12 @@ const firebaseConfig = {
 const fbApp = initializeApp(firebaseConfig);
 const fsdb = getFirestore(fbApp);
 
-const INSTITUTES = ["TechLife IT Academy","Sathima Education Institute","BEETOT English Medium Pre School"];
+const INSTITUTES = ["TechLife IT Academy","Sathima","BEETOT English Medium Pre School"];
+const OLD_INSTITUTE_NAME = "Sathima Education Institute";
+function renameInstituteIfNeeded(kind){
+  if(kind==='classes'){ DB.classes.filter(c=>c.institute===OLD_INSTITUTE_NAME).forEach(c=>{ c.institute='Sathima'; }); }
+  if(kind==='staff'){ DB.staff.filter(s=>(s.institutes||[]).includes(OLD_INSTITUTE_NAME)).forEach(s=>{ s.institutes=s.institutes.map(i=>i===OLD_INSTITUTE_NAME?'Sathima':i); }); }
+}
 const COLLECTION_KEYS = ['classes','teachers','students','staff','attendance','tpay','exp','income','admissions'];
 let DB={}, REMOTE={}; COLLECTION_KEYS.forEach(k=>{ DB[k]=[]; REMOTE[k]=[]; });
 let SETTINGS={admissionFee:500, defaultShare:80, adminPassword:'admin123'};
@@ -89,6 +94,7 @@ COLLECTION_KEYS.forEach(k=>{
   onSnapshot(collection(fsdb,k), snap=>{
     const list=snap.docs.map(d=>Object.assign({}, d.data(), {id:d.id}));
     REMOTE[k]=list; DB[k]=list.map(r=>Object.assign({},r)); safeRerender();
+    if(k==='classes'||k==='staff'){ const before=JSON.stringify(DB[k]); renameInstituteIfNeeded(k); if(JSON.stringify(DB[k])!==before) save(k); }
   }, err=>notify('Sync error ('+k+'): '+err.message));
 });
 onSnapshot(doc(fsdb,'settings','main'), snap=>{
@@ -145,8 +151,59 @@ function normalizeEnrollments(student){ if(student.enrollments) return student.e
 function getEnrollment(student,classId){ return normalizeEnrollments(student).find(e=>e.classId===classId); }
 function isEnrolled(student,classId){ return normalizeEnrollments(student).some(e=>e.classId===classId); }
 function getFee(student,classId,source){ const en=getEnrollment(student,classId); const c=DB.classes.find(x=>x.id===classId); if(source==='Monthly Fee') return en&&en.monthlyFee!=='' && en.monthlyFee!=null ? Number(en.monthlyFee) : Number(c?c.monthlyFee:0)||0; if(source==='Daily Fee') return en&&en.dailyFee!=='' && en.dailyFee!=null ? Number(en.dailyFee) : Number(c?c.dailyFee:0)||0; return 0; }
+function daysUntilBirthday(dob){
+  if(!dob) return null;
+  const d=new Date(dob); if(isNaN(d)) return null;
+  const today=new Date(); today.setHours(0,0,0,0);
+  let next=new Date(today.getFullYear(), d.getMonth(), d.getDate());
+  if(next<today) next=new Date(today.getFullYear()+1, d.getMonth(), d.getDate());
+  return Math.round((next-today)/86400000);
+}
+function upcomingBirthdays(windowDays){
+  const list=[];
+  [['teachers','Teacher'],['students','Student'],['staff','Staff']].forEach(([kind,label])=>{
+    DB[kind].filter(p=>p.status!=='inactive').forEach(p=>{ const d=daysUntilBirthday(p.dob); if(d!==null && d<=windowDays) list.push({p,kind:label,days:d}); });
+  });
+  return list.sort((a,b)=>a.days-b.days);
+}
 
 function el(tag,attrs={},...kids){ const e=document.createElement(tag); for(const k in attrs){ if(k==='html') e.innerHTML=attrs[k]; else if(k.startsWith('on')) e.addEventListener(k.slice(2),attrs[k]); else e.setAttribute(k,attrs[k]); } kids.forEach(k=>e.appendChild(typeof k==='string'?document.createTextNode(k):k)); return e; }
+
+/* Reusable search + sortable-column table. headers: [{label, key, sortable}]. rows: array of data objects.
+   searchText(row) -> string to match against the search box. cellsFor(row) -> array of td contents (string or node), same order/length as headers.
+   sortVal(row,key) -> value used for sorting that column (defaults to row[key]). */
+function renderFilterSortTable(container, {headers, rows, searchText, cellsFor, sortVal, rowClass, emptyText}){
+  container.innerHTML='';
+  const state = container._tableState || {q:'', sortKey:null, sortDir:1};
+  container._tableState = state;
+  const searchInp=el('input',{type:'text',placeholder:'Search...',value:state.q});
+  searchInp.style.marginBottom='8px';
+  searchInp.oninput=()=>{ state.q=searchInp.value; draw(); };
+  container.appendChild(searchInp);
+  const tw=el('div',{class:'tablewrap'}); container.appendChild(tw);
+  function draw(){
+    tw.innerHTML='';
+    const tbl=el('table');
+    const hr=el('tr');
+    headers.forEach(h=>{
+      const label = h.label + (h.sortable && state.sortKey===h.key ? (state.sortDir===1?' ▲':' ▼') : '');
+      const th=el('th',{},label);
+      if(h.sortable){ th.style.cursor='pointer'; th.onclick=()=>{ if(state.sortKey===h.key) state.sortDir=-state.sortDir; else { state.sortKey=h.key; state.sortDir=1; } draw(); }; }
+      hr.appendChild(th);
+    });
+    tbl.appendChild(hr);
+    let list = rows.filter(r=> !state.q || (searchText(r)||'').toLowerCase().includes(state.q.toLowerCase()) );
+    if(state.sortKey){ list=list.slice().sort((a,b)=>{
+      const av=sortVal?sortVal(a,state.sortKey):(a[state.sortKey]||''); const bv=sortVal?sortVal(b,state.sortKey):(b[state.sortKey]||'');
+      if(av<bv) return -1*state.sortDir; if(av>bv) return 1*state.sortDir; return 0; }); }
+    if(!list.length){ tbl.appendChild(el('tr',{},el('td',{colspan:String(headers.length)},emptyText||'No records found.'))); }
+    list.forEach(r=>{ const tr=el('tr'); if(rowClass){ const c=rowClass(r); if(c) tr.className=c; }
+      cellsFor(r).forEach(c=> tr.appendChild(typeof c==='string'?el('td',{},c):el('td',{},c)) );
+      tbl.appendChild(tr); });
+    tw.appendChild(tbl);
+  }
+  draw();
+}
 function compressImage(file){
   return new Promise((resolve,reject)=>{
     const reader=new FileReader();
@@ -198,6 +255,15 @@ function viewDashboard(){
     stat(money(expM+tpM),'Expenses (Month)'),
     stat(money(incM+admM-expM-tpM),'Net (Month)')
   ));
+  const bdays=upcomingBirthdays(14);
+  if(bdays.length){
+    const bCard=el('div',{class:'card'}); bCard.appendChild(el('h2',{},'🎂 Upcoming Birthdays (next 14 days)'));
+    const tw0=el('div',{class:'tablewrap'}); const tbl0=el('table');
+    tbl0.appendChild(el('tr',{},el('th',{},'Name'),el('th',{},'Type'),el('th',{},'Date'),el('th',{},'')));
+    bdays.forEach(({p,kind,days})=>{ const d=new Date(p.dob); const label=days===0?'Today!':days===1?'Tomorrow':'in '+days+' days';
+      tbl0.appendChild(el('tr',{},el('td',{},p.firstName+' '+(p.lastName||'')),el('td',{},kind),el('td',{},(d.getMonth()+1)+'/'+d.getDate()),el('td',{},el('span',{class:'pill'},label)))); });
+    tw0.appendChild(tbl0); bCard.appendChild(tw0); wrap.appendChild(bCard);
+  }
   const card=el('div',{class:'card'}); card.appendChild(el('h2',{},'Classes / Subjects'));
   const tw=el('div',{class:'tablewrap'}); const tbl=el('table');
   tbl.appendChild(el('tr',{},el('th',{},'Institute'),el('th',{},'Subject/Grade'),el('th',{},'Teacher'),el('th',{},'Students')));
@@ -229,17 +295,20 @@ function viewClasses(){
   }},'Save'); card.appendChild(saveBtn); wrap.appendChild(card);
 
   const listCard=el('div',{class:'card'}); listCard.appendChild(el('h2',{},'All Subjects / Classes'));
-  const tw=el('div',{class:'tablewrap'}); const tbl=el('table');
-  tbl.appendChild(el('tr',{},el('th',{},'Institute'),el('th',{},'Name'),el('th',{},'Teacher'),el('th',{},'Share %'),el('th',{},'Monthly'),el('th',{},'Daily'),el('th',{},'')));
-  DB.classes.forEach(c=>{ const t=DB.teachers.find(x=>x.id===c.teacherId); const tr=el('tr');
-    tr.appendChild(el('td',{},c.institute)); tr.appendChild(el('td',{},c.name)); tr.appendChild(el('td',{},t?t.firstName+' '+(t.lastName||''):'—'));
-    tr.appendChild(el('td',{},String(c.sharePercent||SETTINGS.defaultShare)+'%')); tr.appendChild(el('td',{},money(c.monthlyFee))); tr.appendChild(el('td',{},money(c.dailyFee)));
-    const btns=el('div',{class:'row'});
-    btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('edit this subject/class', ()=>{ instSel.value=c.institute; nameInp.value=c.name; teacherSel.value=c.teacherId||''; shareInp.value=c.sharePercent||SETTINGS.defaultShare; monthlyInp.value=c.monthlyFee||''; dailyInp.value=c.dailyFee||''; editingId=c.id; window.scrollTo(0,0); }); }},'Edit'));
-    btns.appendChild(el('button',{class:'btn danger',onclick:()=>{ confirmAdmin('delete this subject/class', ()=>{ DB.classes=DB.classes.filter(x=>x.id!==c.id); save('classes'); render(); }); }},'Delete'));
-    const td=el('td',{}); td.appendChild(btns); tr.appendChild(td); tbl.appendChild(tr);
+  const listContainer=el('div'); listCard.appendChild(listContainer);
+  renderFilterSortTable(listContainer, {
+    headers:[{label:'Institute',key:'institute',sortable:true},{label:'Name',key:'name',sortable:true},{label:'Teacher',key:'teacher',sortable:true},{label:'Share %',key:'sharePercent',sortable:true},{label:'Monthly',key:'monthlyFee',sortable:true},{label:'Daily',key:'dailyFee',sortable:true},{label:'',key:null,sortable:false}],
+    rows: DB.classes,
+    searchText: c=>{ const t=DB.teachers.find(x=>x.id===c.teacherId); return [c.institute,c.name,t?t.firstName+' '+(t.lastName||''):''].join(' '); },
+    sortVal: (c,key)=>{ if(key==='teacher'){ const t=DB.teachers.find(x=>x.id===c.teacherId); return t?t.firstName:''; } if(key==='monthlyFee'||key==='dailyFee'||key==='sharePercent') return Number(c[key])||0; return c[key]||''; },
+    cellsFor: c=>{ const t=DB.teachers.find(x=>x.id===c.teacherId);
+      const btns=el('div',{class:'row'});
+      btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('edit this subject/class', ()=>{ instSel.value=c.institute; nameInp.value=c.name; teacherSel.value=c.teacherId||''; shareInp.value=c.sharePercent||SETTINGS.defaultShare; monthlyInp.value=c.monthlyFee||''; dailyInp.value=c.dailyFee||''; editingId=c.id; window.scrollTo(0,0); }); }},'Edit'));
+      btns.appendChild(el('button',{class:'btn danger',onclick:()=>{ confirmAdmin('delete this subject/class', ()=>{ DB.classes=DB.classes.filter(x=>x.id!==c.id); save('classes'); render(); }); }},'Delete'));
+      return [c.institute, c.name, t?t.firstName+' '+(t.lastName||''):'—', String(c.sharePercent||SETTINGS.defaultShare)+'%', money(c.monthlyFee), money(c.dailyFee), btns];
+    }
   });
-  tw.appendChild(tbl); listCard.appendChild(tw); wrap.appendChild(listCard);
+  wrap.appendChild(listCard);
   return wrap;
 }
 
@@ -306,34 +375,39 @@ function viewPerson(kind){
   }},'Save'); card.appendChild(saveBtn); wrap.appendChild(card);
 
   const listCard=el('div',{class:'card'}); listCard.appendChild(el('h2',{},'All '+kind[0].toUpperCase()+kind.slice(1)));
-  const tw=el('div',{class:'tablewrap'}); const tbl=el('table');
-  let heads=['Photo','No','Name','Age'];
-  if(kind==='teachers') heads=heads.concat(['Subject','NIC','Qualifications']);
-  if(kind==='students') heads=heads.concat(['Classes','Father','Mother','Skills','Payment']);
-  if(kind==='staff') heads=heads.concat(['Business Units','Role','NIC','Payment']);
-  heads.push('Status',''); const hr=el('tr'); heads.forEach(h=>hr.appendChild(el('th',{},h))); tbl.appendChild(hr);
-
-  DB[kind].forEach(p=>{
-    const tr=el('tr'); if(p.status==='inactive') tr.className='inactive-row';
-    tr.appendChild(el('td',{}, p.photo?el('img',{class:'thumb',src:p.photo}):el('span',{},'—')));
-    tr.appendChild(el('td',{},p.no||'')); tr.appendChild(el('td',{},p.firstName+' '+(p.lastName||''))); tr.appendChild(el('td',{},String(age(p.dob))));
-    if(kind==='teachers') tr.appendChild(el('td',{},p.subject||'')), tr.appendChild(el('td',{},p.nic||'')), tr.appendChild(el('td',{},p.qualifications||''));
-    if(kind==='students'){ const names=normalizeEnrollments(p).map(e=>{const c=DB.classes.find(x=>x.id===e.classId); return c?(c.name+(e.level?' ('+e.level+')':'')):'';}).filter(Boolean).join(', ');
-      tr.appendChild(el('td',{},names)); tr.appendChild(el('td',{},p.fatherName||'')); tr.appendChild(el('td',{},p.motherName||'')); tr.appendChild(el('td',{},p.skills||'')); tr.appendChild(el('td',{},p.paymentType||'')); }
-    if(kind==='staff'){ tr.appendChild(el('td',{},(p.institutes||[]).join(', '))); tr.appendChild(el('td',{},p.role||'')); tr.appendChild(el('td',{},p.nic||'')); tr.appendChild(el('td',{},p.paymentType||'')); }
-    tr.appendChild(el('td',{}, el('span',{class:'pill'}, p.status||'active')));
-    const btns=el('div',{class:'row'});
-    btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('edit this record', ()=>{
-      for(const k in f) f[k].value=p[k]||'';
-      if(kind==='students'){ enrollments=normalizeEnrollments(p).map(e=>Object.assign({},e)); Array.from(enrollWrap.children).forEach(row=>{ if(row._refresh) row._refresh(enrollments.find(e=>e.classId===row._classId)); }); }
-      if(kind==='staff'){ staffInstitutes=(p.institutes||[]).slice(); staffInstWrap.querySelectorAll('input[type=checkbox]').forEach(cb=>cb.checked=staffInstitutes.includes(cb.value)); }
-      photoData=p.photo||''; if(photoWrap._setPreview) photoWrap._setPreview(photoData); editingId=p.id; window.scrollTo(0,0);
-    }); }},'Edit'));
-    btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ p.status = p.status==='inactive'?'active':'inactive'; save(kind); render(); }}, p.status==='inactive'?'Activate':'Deactivate'));
-    btns.appendChild(el('button',{class:'btn danger',onclick:()=>{ confirmAdmin('delete this record', ()=>{ DB[kind]=DB[kind].filter(x=>x.id!==p.id); save(kind); render(); }); }},'Delete'));
-    const td=el('td',{}); td.appendChild(btns); tr.appendChild(td); tbl.appendChild(tr);
+  let heads=[{label:'Photo',key:null,sortable:false},{label:'No',key:'no',sortable:true},{label:'Name',key:'firstName',sortable:true},{label:'Age',key:'dob',sortable:true}];
+  if(kind==='teachers') heads=heads.concat([{label:'Subject',key:'subject',sortable:true},{label:'NIC',key:'nic',sortable:false},{label:'Qualifications',key:'qualifications',sortable:false}]);
+  if(kind==='students') heads=heads.concat([{label:'Classes',key:'classes',sortable:false},{label:'Father',key:'fatherName',sortable:true},{label:'Mother',key:'motherName',sortable:false},{label:'Skills',key:'skills',sortable:false},{label:'Payment',key:'paymentType',sortable:true}]);
+  if(kind==='staff') heads=heads.concat([{label:'Business Units',key:'institutes',sortable:false},{label:'Role',key:'role',sortable:true},{label:'NIC',key:'nic',sortable:false},{label:'Payment',key:'paymentType',sortable:true}]);
+  heads.push({label:'Status',key:'status',sortable:true}); heads.push({label:'',key:null,sortable:false});
+  const listContainer=el('div'); listCard.appendChild(listContainer);
+  renderFilterSortTable(listContainer, {
+    headers: heads,
+    rows: DB[kind],
+    searchText: p=>{ let parts=[p.no,p.firstName,p.lastName,p.status]; if(kind==='teachers') parts.push(p.subject,p.nic,p.qualifications); if(kind==='students'){ parts.push(p.fatherName,p.motherName,p.skills,p.paymentType); parts.push(normalizeEnrollments(p).map(e=>{const c=DB.classes.find(x=>x.id===e.classId);return c?c.name:'';}).join(' ')); } if(kind==='staff') parts.push(p.role,p.nic,p.paymentType,(p.institutes||[]).join(' ')); return parts.join(' '); },
+    sortVal: (p,key)=>{ if(key==='dob') return p.dob||''; if(key==='firstName') return (p.firstName||'')+' '+(p.lastName||''); return p[key]||''; },
+    rowClass: p=> p.status==='inactive' ? 'inactive-row' : '',
+    cellsFor: p=>{
+      const cells=[ p.photo?el('img',{class:'thumb',src:p.photo}):el('span',{},'—'), p.no||'', p.firstName+' '+(p.lastName||''), String(age(p.dob)) ];
+      if(kind==='teachers') cells.push(p.subject||'', p.nic||'', p.qualifications||'');
+      if(kind==='students'){ const names=normalizeEnrollments(p).map(e=>{const c=DB.classes.find(x=>x.id===e.classId); return c?(c.name+(e.level?' ('+e.level+')':'')):'';}).filter(Boolean).join(', ');
+        cells.push(names, p.fatherName||'', p.motherName||'', p.skills||'', p.paymentType||''); }
+      if(kind==='staff') cells.push((p.institutes||[]).join(', '), p.role||'', p.nic||'', p.paymentType||'');
+      cells.push(el('span',{class:'pill'}, p.status||'active'));
+      const btns=el('div',{class:'row'});
+      btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('edit this record', ()=>{
+        for(const k in f) f[k].value=p[k]||'';
+        if(kind==='students'){ enrollments=normalizeEnrollments(p).map(e=>Object.assign({},e)); Array.from(enrollWrap.children).forEach(row=>{ if(row._refresh) row._refresh(enrollments.find(e=>e.classId===row._classId)); }); }
+        if(kind==='staff'){ staffInstitutes=(p.institutes||[]).slice(); staffInstWrap.querySelectorAll('input[type=checkbox]').forEach(cb=>cb.checked=staffInstitutes.includes(cb.value)); }
+        photoData=p.photo||''; if(photoWrap._setPreview) photoWrap._setPreview(photoData); editingId=p.id; window.scrollTo(0,0);
+      }); }},'Edit'));
+      btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ p.status = p.status==='inactive'?'active':'inactive'; save(kind); render(); }}, p.status==='inactive'?'Activate':'Deactivate'));
+      btns.appendChild(el('button',{class:'btn danger',onclick:()=>{ confirmAdmin('delete this record', ()=>{ DB[kind]=DB[kind].filter(x=>x.id!==p.id); save(kind); render(); }); }},'Delete'));
+      cells.push(btns);
+      return cells;
+    }
   });
-  tw.appendChild(tbl); listCard.appendChild(tw); wrap.appendChild(listCard);
+  wrap.appendChild(listCard);
   return wrap;
 }
 
@@ -346,6 +420,7 @@ function viewAttendance(){
   const dateInput=el('input',{type:'date',value:new Date().toISOString().slice(0,10)});
   [['Mode',typeSel],['Subject/Class',classSel],['Date',dateInput]].forEach(([l,i])=>{ const h=el('div');h.appendChild(el('label',{},l));h.appendChild(i);grid.appendChild(h); });
   card.appendChild(grid);
+  const searchInp=el('input',{type:'text',placeholder:'Search name...'}); card.appendChild(searchInp);
   const listDiv=el('div',{class:'tablewrap'}); card.appendChild(listDiv); wrap.appendChild(card);
 
   function mark(personId,personType,classId,date,status){
@@ -360,6 +435,8 @@ function viewAttendance(){
     if(typeSel.value==='Staff'){ classSel.parentElement.style.display='none'; people=DB.staff.filter(s=>s.status!=='inactive').map(s=>({p:s,type:'staff',classId:null})); }
     else { classSel.parentElement.style.display='block'; const c=DB.classes.find(x=>x.id===classSel.value); if(c){ const t=DB.teachers.find(x=>x.id===c.teacherId); if(t) people.push({p:t,type:'teacher',classId:c.id});
       DB.students.filter(s=>s.status!=='inactive'&&isEnrolled(s,c.id)).forEach(s=>people.push({p:s,type:'student',classId:c.id})); } }
+    const q=searchInp.value.toLowerCase();
+    if(q) people=people.filter(({p})=> (p.firstName+' '+(p.lastName||'')).toLowerCase().includes(q));
     people.forEach(({p,type,classId})=>{ const existing=DB.attendance.find(a=>a.personId===p.id&&a.date===date&&a.classId===classId); const status=existing?existing.status:'unmarked';
       const tr=el('tr'); tr.appendChild(el('td',{},(type==='teacher'?'👨‍🏫 ':'')+p.firstName+' '+(p.lastName||'')));
       tr.appendChild(el('td',{},el('span',{class:'pill'},status)));
@@ -367,7 +444,7 @@ function viewAttendance(){
       const td=el('td',{}); td.appendChild(btns); tr.appendChild(td); tbl.appendChild(tr); });
     listDiv.appendChild(tbl);
   }
-  typeSel.onchange=renderList; classSel.onchange=renderList; dateInput.onchange=renderList; renderList();
+  typeSel.onchange=renderList; classSel.onchange=renderList; dateInput.onchange=renderList; searchInp.oninput=renderList; renderList();
   return wrap;
 }
 
@@ -390,16 +467,19 @@ function viewTPay(){
   wrap.appendChild(card);
 
   const listCard=el('div',{class:'card'}); listCard.appendChild(el('h2',{},'Payment History'));
-  const tw=el('div',{class:'tablewrap'}); const tbl=el('table');
-  tbl.appendChild(el('tr',{},el('th',{},'Date'),el('th',{},'Teacher'),el('th',{},'Subject'),el('th',{},'Category'),el('th',{},'Amount'),el('th',{},'')));
-  DB.tpay.slice().sort((a,b)=>b.date.localeCompare(a.date)).forEach(p=>{ const t=DB.teachers.find(x=>x.id===p.teacherId); const c=DB.classes.find(x=>x.id===p.classId);
-    const tr=el('tr'); tr.appendChild(el('td',{},p.date)); tr.appendChild(el('td',{},t?t.firstName+' '+(t.lastName||''):'(removed)')); tr.appendChild(el('td',{},c?c.name:'—'));
-    tr.appendChild(el('td',{},el('span',{class:'pill'},p.category))); tr.appendChild(el('td',{},money(p.amount)));
-    const btns=el('div',{class:'row'});
-    btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('edit this payment record', ()=>{ teacherSel.value=p.teacherId; classSel.value=p.classId||''; catSel.value=p.category; amtInput.value=p.amount; dateInput.value=p.date; noteInput.value=p.note||''; editingId=p.id; window.scrollTo(0,0); }); }},'Edit'));
-    btns.appendChild(el('button',{class:'btn danger',onclick:()=>{ confirmAdmin('delete this payment record', ()=>{ DB.tpay=DB.tpay.filter(x=>x.id!==p.id); save('tpay'); render(); }); }},'Delete'));
-    const td=el('td',{}); td.appendChild(btns); tr.appendChild(td); tbl.appendChild(tr); });
-  tw.appendChild(tbl); listCard.appendChild(tw);
+  const listContainer=el('div'); listCard.appendChild(listContainer);
+  renderFilterSortTable(listContainer, {
+    headers:[{label:'Date',key:'date',sortable:true},{label:'Teacher',key:'teacher',sortable:true},{label:'Subject',key:'subject',sortable:true},{label:'Category',key:'category',sortable:true},{label:'Amount',key:'amount',sortable:true},{label:'',key:null,sortable:false}],
+    rows: DB.tpay.slice().sort((a,b)=>b.date.localeCompare(a.date)),
+    searchText: p=>{ const t=DB.teachers.find(x=>x.id===p.teacherId); const c=DB.classes.find(x=>x.id===p.classId); return [p.date,t?t.firstName+' '+(t.lastName||''):'',c?c.name:'',p.category,p.note].join(' '); },
+    sortVal: (p,key)=>{ if(key==='teacher'){ const t=DB.teachers.find(x=>x.id===p.teacherId); return t?t.firstName:''; } if(key==='subject'){ const c=DB.classes.find(x=>x.id===p.classId); return c?c.name:''; } if(key==='amount') return Number(p.amount)||0; return p[key]||''; },
+    cellsFor: p=>{ const t=DB.teachers.find(x=>x.id===p.teacherId); const c=DB.classes.find(x=>x.id===p.classId);
+      const btns=el('div',{class:'row'});
+      btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('edit this payment record', ()=>{ teacherSel.value=p.teacherId; classSel.value=p.classId||''; catSel.value=p.category; amtInput.value=p.amount; dateInput.value=p.date; noteInput.value=p.note||''; editingId=p.id; window.scrollTo(0,0); }); }},'Edit'));
+      btns.appendChild(el('button',{class:'btn danger',onclick:()=>{ confirmAdmin('delete this payment record', ()=>{ DB.tpay=DB.tpay.filter(x=>x.id!==p.id); save('tpay'); render(); }); }},'Delete'));
+      return [p.date, t?t.firstName+' '+(t.lastName||''):'(removed)', c?c.name:'—', el('span',{class:'pill'},p.category), money(p.amount), btns];
+    }
+  });
   listCard.appendChild(el('p',{class:'small'},'Total recorded: '+money(DB.tpay.reduce((s,p)=>s+Number(p.amount),0))));
   wrap.appendChild(listCard); return wrap;
 }
@@ -418,15 +498,19 @@ function viewExp(){
     save('exp'); render(); }},'Save Expense'));
   wrap.appendChild(card);
   const listCard=el('div',{class:'card'}); listCard.appendChild(el('h2',{},'Expense History'));
-  const tw=el('div',{class:'tablewrap'}); const tbl=el('table');
-  tbl.appendChild(el('tr',{},el('th',{},'Date'),el('th',{},'Category'),el('th',{},'Description'),el('th',{},'Amount'),el('th',{},'')));
-  DB.exp.slice().sort((a,b)=>b.date.localeCompare(a.date)).forEach(p=>{ const tr=el('tr'); tr.appendChild(el('td',{},p.date)); tr.appendChild(el('td',{},el('span',{class:'pill'},p.category)));
-    tr.appendChild(el('td',{},p.description||'')); tr.appendChild(el('td',{},money(p.amount)));
-    const btns=el('div',{class:'row'});
-    btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('edit this expense record', ()=>{ catSel.value=p.category; descInput.value=p.description||''; amtInput.value=p.amount; dateInput.value=p.date; editingId=p.id; window.scrollTo(0,0); }); }},'Edit'));
-    btns.appendChild(el('button',{class:'btn danger',onclick:()=>{ confirmAdmin('delete this expense record', ()=>{ DB.exp=DB.exp.filter(x=>x.id!==p.id); save('exp'); render(); }); }},'Delete'));
-    const td=el('td',{}); td.appendChild(btns); tr.appendChild(td); tbl.appendChild(tr); });
-  tw.appendChild(tbl); listCard.appendChild(tw);
+  const listContainer=el('div'); listCard.appendChild(listContainer);
+  renderFilterSortTable(listContainer, {
+    headers:[{label:'Date',key:'date',sortable:true},{label:'Category',key:'category',sortable:true},{label:'Description',key:'description',sortable:true},{label:'Amount',key:'amount',sortable:true},{label:'',key:null,sortable:false}],
+    rows: DB.exp.slice().sort((a,b)=>b.date.localeCompare(a.date)),
+    searchText: p=>[p.date,p.category,p.description].join(' '),
+    sortVal: (p,key)=> key==='amount'?(Number(p.amount)||0):(p[key]||''),
+    cellsFor: p=>{
+      const btns=el('div',{class:'row'});
+      btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('edit this expense record', ()=>{ catSel.value=p.category; descInput.value=p.description||''; amtInput.value=p.amount; dateInput.value=p.date; editingId=p.id; window.scrollTo(0,0); }); }},'Edit'));
+      btns.appendChild(el('button',{class:'btn danger',onclick:()=>{ confirmAdmin('delete this expense record', ()=>{ DB.exp=DB.exp.filter(x=>x.id!==p.id); save('exp'); render(); }); }},'Delete'));
+      return [p.date, el('span',{class:'pill'},p.category), p.description||'', money(p.amount), btns];
+    }
+  });
   listCard.appendChild(el('p',{class:'small'},'Total recorded: '+money(DB.exp.reduce((s,p)=>s+Number(p.amount),0))));
   wrap.appendChild(listCard); return wrap;
 }
@@ -446,14 +530,19 @@ function viewAdmissions(){
     save('admissions'); render(); }},'Save Admission'));
   wrap.appendChild(card);
   const listCard=el('div',{class:'card'}); listCard.appendChild(el('h2',{},'Admission History'));
-  const tw=el('div',{class:'tablewrap'}); const tbl=el('table');
-  tbl.appendChild(el('tr',{},el('th',{},'Date'),el('th',{},'Student'),el('th',{},'Amount'),el('th',{},'Note'),el('th',{},'')));
-  DB.admissions.slice().sort((a,b)=>b.date.localeCompare(a.date)).forEach(p=>{ const s=DB.students.find(x=>x.id===p.studentId); const tr=el('tr');
-    tr.appendChild(el('td',{},p.date)); tr.appendChild(el('td',{},s?s.firstName+' '+(s.lastName||''):'(removed)')); tr.appendChild(el('td',{},money(p.amount))); tr.appendChild(el('td',{},p.note||''));
-    const btns=el('div',{class:'row'});
-    btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('edit this admission record', ()=>{ studentSel.value=p.studentId; amtInput.value=p.amount; dateInput.value=p.date; noteInput.value=p.note||''; editingId=p.id; window.scrollTo(0,0); }); }},'Edit'));
-    btns.appendChild(el('button',{class:'btn danger',onclick:()=>{ confirmAdmin('delete this admission record', ()=>{ DB.admissions=DB.admissions.filter(x=>x.id!==p.id); save('admissions'); render(); }); }},'Delete'));
-    const td=el('td',{}); td.appendChild(btns); tr.appendChild(td); tbl.appendChild(tr); });
+  const listContainer=el('div'); listCard.appendChild(listContainer);
+  renderFilterSortTable(listContainer, {
+    headers:[{label:'Date',key:'date',sortable:true},{label:'Student',key:'student',sortable:true},{label:'Amount',key:'amount',sortable:true},{label:'Note',key:'note',sortable:false},{label:'',key:null,sortable:false}],
+    rows: DB.admissions.slice().sort((a,b)=>b.date.localeCompare(a.date)),
+    searchText: p=>{ const s=DB.students.find(x=>x.id===p.studentId); return [p.date,s?s.firstName+' '+(s.lastName||''):'',p.note].join(' '); },
+    sortVal: (p,key)=>{ if(key==='student'){ const s=DB.students.find(x=>x.id===p.studentId); return s?s.firstName:''; } if(key==='amount') return Number(p.amount)||0; return p[key]||''; },
+    cellsFor: p=>{ const s=DB.students.find(x=>x.id===p.studentId);
+      const btns=el('div',{class:'row'});
+      btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('edit this admission record', ()=>{ studentSel.value=p.studentId; amtInput.value=p.amount; dateInput.value=p.date; noteInput.value=p.note||''; editingId=p.id; window.scrollTo(0,0); }); }},'Edit'));
+      btns.appendChild(el('button',{class:'btn danger',onclick:()=>{ confirmAdmin('delete this admission record', ()=>{ DB.admissions=DB.admissions.filter(x=>x.id!==p.id); save('admissions'); render(); }); }},'Delete'));
+      return [p.date, s?s.firstName+' '+(s.lastName||''):'(removed)', money(p.amount), p.note||'', btns];
+    }
+  });
   tw.appendChild(tbl); listCard.appendChild(tw);
   listCard.appendChild(el('p',{class:'small'},'Total recorded: '+money(DB.admissions.reduce((s,p)=>s+Number(p.amount),0))));
   wrap.appendChild(listCard); return wrap;
@@ -518,11 +607,13 @@ function viewIncome(){
       normalizeEnrollments(s).forEach(en=>{ const c=DB.classes.find(x=>x.id===en.classId); if(!c) return;
         const required=getFee(s,c.id,'Monthly Fee');
         const paidSum=DB.income.filter(e=>e.studentId===s.id&&e.classId===c.id&&e.source==='Monthly Fee'&&e.forMonth===mp).reduce((sum,e)=>sum+Number(e.amount),0);
-        const status = paidSum<=0 ? 'Due' : (paidSum>=required ? 'Paid' : 'Partial');
+        const skipped=DB.income.some(e=>e.studentId===s.id&&e.classId===c.id&&e.source==='Skipped'&&e.forMonth===mp);
+        const status = skipped ? 'Skipped' : (paidSum<=0 ? 'Due' : (paidSum>=required ? 'Paid' : 'Partial'));
         const tr=el('tr'); tr.appendChild(el('td',{},s.no+' - '+s.firstName+' '+(s.lastName||''))); tr.appendChild(el('td',{},c.name+(en.level?' ('+en.level+')':''))); tr.appendChild(el('td',{},c.institute));
         tr.appendChild(el('td',{},el('span',{class:'pill'},status)));
-        const td=el('td',{});
+        const td=el('td',{class:'row'});
         if(status!=='Paid') td.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ instSel.value=c.institute; refreshClasses(); classSel.value=c.id; refreshStudents(); studentSel.value=s.id; sourceSel.value='Monthly Fee'; forMonthInput.value=mp; updateNoteAndAmount(); window.scrollTo(0,0); }},'Record Payment'));
+        if(status==='Due'||status==='Partial') td.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('skip '+s.firstName+"'s payment for "+mp, ()=>{ DB.income.push({id:uid(),studentId:s.id,classId:c.id,source:'Skipped',amount:0,date:new Date().toISOString().slice(0,10),forMonth:mp}); save('income'); render(); }); }},'Skip'));
         tr.appendChild(td); tbl.appendChild(tr);
       });
     });
@@ -531,17 +622,21 @@ function viewIncome(){
   monthInput.onchange=renderDue; renderDue();
 
   const listCard=el('div',{class:'card'}); listCard.appendChild(el('h2',{},'Payment History'));
-  const tw=el('div',{class:'tablewrap'}); const tbl=el('table');
-  tbl.appendChild(el('tr',{},el('th',{},'Date'),el('th',{},'For Month'),el('th',{},'Student'),el('th',{},'Subject'),el('th',{},'Source'),el('th',{},'Amount'),el('th',{},'')));
-  DB.income.slice().sort((a,b)=>b.date.localeCompare(a.date)).forEach(p=>{ const c=DB.classes.find(x=>x.id===p.classId); const s=DB.students.find(x=>x.id===p.studentId); const tr=el('tr');
-    tr.appendChild(el('td',{},p.date)); tr.appendChild(el('td',{},p.forMonth||'—')); tr.appendChild(el('td',{},s?s.no+' - '+s.firstName+' '+(s.lastName||''):'(removed)')); tr.appendChild(el('td',{},c?c.name:'(removed)')); tr.appendChild(el('td',{},el('span',{class:'pill'},p.source))); tr.appendChild(el('td',{},money(p.amount)));
-    const btns=el('div',{class:'row'});
-    btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('edit this payment record', ()=>{
-      instSel.value=c?c.institute:''; refreshClasses(); classSel.value=p.classId; refreshStudents(); studentSel.value=p.studentId; sourceSel.value=p.source; amtInput.value=p.amount; dateInput.value=p.date; forMonthInput.value=p.forMonth||new Date().toISOString().slice(0,7); updateNoteAndAmount(); editingId=p.id; window.scrollTo(0,0);
-    }); }},'Edit'));
-    btns.appendChild(el('button',{class:'btn danger',onclick:()=>{ confirmAdmin('delete this payment record', ()=>{ DB.income=DB.income.filter(x=>x.id!==p.id); save('income'); render(); }); }},'Delete'));
-    const td=el('td',{}); td.appendChild(btns); tr.appendChild(td); tbl.appendChild(tr); });
-  tw.appendChild(tbl); listCard.appendChild(tw);
+  const listContainer=el('div'); listCard.appendChild(listContainer);
+  renderFilterSortTable(listContainer, {
+    headers:[{label:'Date',key:'date',sortable:true},{label:'For Month',key:'forMonth',sortable:true},{label:'Student',key:'student',sortable:true},{label:'Subject',key:'subject',sortable:true},{label:'Source',key:'source',sortable:true},{label:'Amount',key:'amount',sortable:true},{label:'',key:null,sortable:false}],
+    rows: DB.income.slice().sort((a,b)=>b.date.localeCompare(a.date)),
+    searchText: p=>{ const c=DB.classes.find(x=>x.id===p.classId); const s=DB.students.find(x=>x.id===p.studentId); return [p.date,p.forMonth,s?s.firstName+' '+(s.lastName||''):'',c?c.name:'',p.source].join(' '); },
+    sortVal: (p,key)=>{ if(key==='student'){ const s=DB.students.find(x=>x.id===p.studentId); return s?s.firstName:''; } if(key==='subject'){ const c=DB.classes.find(x=>x.id===p.classId); return c?c.name:''; } if(key==='amount') return Number(p.amount)||0; return p[key]||''; },
+    cellsFor: p=>{ const c=DB.classes.find(x=>x.id===p.classId); const s=DB.students.find(x=>x.id===p.studentId);
+      const btns=el('div',{class:'row'});
+      btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('edit this payment record', ()=>{
+        instSel.value=c?c.institute:''; refreshClasses(); classSel.value=p.classId; refreshStudents(); studentSel.value=p.studentId; sourceSel.value=p.source; amtInput.value=p.amount; dateInput.value=p.date; forMonthInput.value=p.forMonth||new Date().toISOString().slice(0,7); updateNoteAndAmount(); editingId=p.id; window.scrollTo(0,0);
+      }); }},'Edit'));
+      btns.appendChild(el('button',{class:'btn danger',onclick:()=>{ confirmAdmin('delete this payment record', ()=>{ DB.income=DB.income.filter(x=>x.id!==p.id); save('income'); render(); }); }},'Delete'));
+      return [p.date, p.forMonth||'—', s?s.no+' - '+s.firstName+' '+(s.lastName||''):'(removed)', c?c.name:'(removed)', el('span',{class:'pill'},p.source), money(p.amount), btns];
+    }
+  });
   listCard.appendChild(el('p',{class:'small'},'Total recorded: '+money(DB.income.reduce((s,p)=>s+Number(p.amount),0))));
   wrap.appendChild(listCard); return wrap;
 }
@@ -564,7 +659,20 @@ function viewReports(){
       rows+='<tr><td>Admission Fees</td><td>'+money(admToday)+'</td><td>'+money(0)+'</td><td>'+money(admToday)+'</td></tr>'; }
     tbl.appendChild(el('tr',{},el('td',{},el('b',{},'Total')),el('td',{},el('b',{},money(tI))),el('td',{},el('b',{},money(tC))),el('td',{},el('b',{},money(tP)))));
     tw.appendChild(tbl); dOut.appendChild(tw);
-    const body='<h1>Daily Report — '+date+'</h1><table><tr><th>Subject</th><th>Income</th><th>Teacher\'s Cut</th><th>Profit</th></tr>'+rows+'<tr><td><b>Total</b></td><td><b>'+money(tI)+'</b></td><td><b>'+money(tC)+'</b></td><td><b>'+money(tP)+'</b></td></tr></table>';
+
+    dOut.appendChild(el('h2',{style:'font-size:13px;margin:14px 0 6px'},'Student Payments — '+date));
+    const payments=DB.income.filter(e=>e.date===date&&Number(e.amount)>0);
+    const tw2=el('div',{class:'tablewrap'}); const tbl2=el('table');
+    tbl2.appendChild(el('tr',{},el('th',{},'Student'),el('th',{},'Subject/Grade'),el('th',{},'Institute'),el('th',{},'For Month'),el('th',{},'Fee')));
+    let detailRows='';
+    if(!payments.length){ tbl2.appendChild(el('tr',{},el('td',{colspan:'5'},'No student payments recorded for this date.'))); }
+    payments.forEach(p=>{ const s=DB.students.find(x=>x.id===p.studentId); const c=DB.classes.find(x=>x.id===p.classId);
+      const name=s?s.no+' - '+s.firstName+' '+(s.lastName||''):'(removed)'; const subj=c?c.name:'(removed)'; const inst=c?c.institute:'';
+      tbl2.appendChild(el('tr',{},el('td',{},name),el('td',{},subj),el('td',{},inst),el('td',{},p.forMonth||'—'),el('td',{},money(p.amount))));
+      detailRows+='<tr><td>'+name+'</td><td>'+subj+'</td><td>'+inst+'</td><td>'+(p.forMonth||'—')+'</td><td>'+money(p.amount)+'</td></tr>'; });
+    tw2.appendChild(tbl2); dOut.appendChild(tw2);
+
+    const body='<h1>Daily Report — '+date+'</h1><h2>Income by Subject</h2><table><tr><th>Subject</th><th>Income</th><th>Teacher\'s Cut</th><th>Profit</th></tr>'+rows+'<tr><td><b>Total</b></td><td><b>'+money(tI)+'</b></td><td><b>'+money(tC)+'</b></td><td><b>'+money(tP)+'</b></td></tr></table><h2>Student Payments</h2><table><tr><th>Student</th><th>Subject/Grade</th><th>Institute</th><th>For Month</th><th>Fee</th></tr>'+(detailRows||'<tr><td colspan="5">No student payments recorded for this date.</td></tr>')+'</table>';
     const btnRow=el('div',{class:'row',style:'margin-top:10px'});
     btnRow.appendChild(el('button',{class:'btn secondary',onclick:()=>exportReport('daily-report-'+date, body, 'jpg')},'Download as JPEG'));
     btnRow.appendChild(el('button',{class:'btn secondary',onclick:()=>exportReport('daily-report-'+date, body, 'pdf')},'Download as PDF'));
