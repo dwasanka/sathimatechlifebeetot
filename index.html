@@ -6,52 +6,80 @@
 <title>Institute Management System</title>
 <style>
 :root{
-  --bg:#f6f7f9; --card:#fff; --text:#1a1d23; --muted:#6b7280; --border:#e2e5ea;
-  --accent:#2563eb; --accent-text:#fff; --danger:#dc2626; --tab-bg:#eef0f3;
+  --bg:#eef5fb;--card:#ffffff;--text:#12263f;--muted:#5d7189;--border:#d8e5f1;--input-bg:#f6fafd;--th-bg:#e9f3fa;--row-alt:#f7fbfe;--row-hover:#e8f4fb;
+  --accent:#0b8fb8;--accent2:#4f6bed;--danger:#d93a3a;--shadow:0 6px 20px rgba(15,76,129,.09);
+  --ok-bg:#d9f5ec;--ok-fg:#0b7a5a;--bad-bg:#fde3e3;--bad-fg:#b42323;--warn-bg:#fff1d6;--warn-fg:#946000;--muted-bg:#e4ecf4;--muted-fg:#5d7189;
+  --grad:linear-gradient(135deg,var(--accent),var(--accent2));
 }
-@media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){--bg:#15171c;--card:#1e2129;--text:#e8e9ec;--muted:#9aa0ac;--border:#2c303a;--accent:#3b82f6;--accent-text:#fff;--danger:#f87171;--tab-bg:#262a33;}
-}
-:root[data-theme="dark"]{--bg:#15171c;--card:#1e2129;--text:#e8e9ec;--muted:#9aa0ac;--border:#2c303a;--accent:#3b82f6;--accent-text:#fff;--danger:#f87171;--tab-bg:#262a33;}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --bg:#0b1523;--card:#13233a;--text:#e6f0fa;--muted:#8fa6bf;--border:#24384f;--input-bg:#0f1c2e;--th-bg:#18304b;--row-alt:#112036;--row-hover:#1a3350;
+--accent:#2bb3dd;--accent2:#7c8cff;--danger:#f87171;--shadow:0 6px 20px rgba(0,0,0,.35);
+--ok-bg:#0f3d33;--ok-fg:#5eead4;--bad-bg:#4a1d24;--bad-fg:#fca5a5;--warn-bg:#4a3a14;--warn-fg:#fcd34d;--muted-bg:#223650;--muted-fg:#a9bdd3; } }
+:root[data-theme="dark"]{ --bg:#0b1523;--card:#13233a;--text:#e6f0fa;--muted:#8fa6bf;--border:#24384f;--input-bg:#0f1c2e;--th-bg:#18304b;--row-alt:#112036;--row-hover:#1a3350;
+--accent:#2bb3dd;--accent2:#7c8cff;--danger:#f87171;--shadow:0 6px 20px rgba(0,0,0,.35);
+--ok-bg:#0f3d33;--ok-fg:#5eead4;--bad-bg:#4a1d24;--bad-fg:#fca5a5;--warn-bg:#4a3a14;--warn-fg:#fcd34d;--muted-bg:#223650;--muted-fg:#a9bdd3; }
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:14px;}
-header{padding:14px 16px;border-bottom:1px solid var(--border);background:var(--card);position:sticky;top:0;z-index:5;}
-header h1{margin:0;font-size:16px}
-header p{margin:2px 0 0;color:var(--muted);font-size:11px}
-nav{display:flex;gap:6px;overflow-x:auto;padding:10px 16px;background:var(--tab-bg);border-bottom:1px solid var(--border);}
-nav button{flex:0 0 auto;padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;font-size:12.5px;white-space:nowrap;}
-nav button.active{background:var(--accent);color:var(--accent-text);border-color:var(--accent);}
-main{padding:14px 16px 40px;max-width:920px;margin:0 auto;}
-.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:14px;}
-.card h2{margin:0 0 10px;font-size:15px}
+body{margin:0;background:var(--bg);color:var(--text);font-family:"Segoe UI",-apple-system,Roboto,Arial,sans-serif;font-size:14px;}
+header{padding:14px 18px;background:linear-gradient(115deg,#0b3b6f 0%,#0b8fb8 55%,#19c3c1 100%);color:#fff;position:sticky;top:0;z-index:5;box-shadow:0 4px 16px rgba(11,59,111,.25);}
+.brand{display:flex;align-items:center;gap:12px;max-width:960px;margin:0 auto;}
+.logo{font-size:24px;background:rgba(255,255,255,.18);border-radius:12px;padding:6px 10px;line-height:1;}
+header h1{margin:0;font-size:17px;letter-spacing:.2px}
+header p{margin:2px 0 0;color:rgba(255,255,255,.85);font-size:11.5px}
+nav{display:flex;gap:6px;overflow-x:auto;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--border);}
+nav button{flex:0 0 auto;padding:7px 14px;border-radius:999px;border:1px solid transparent;background:transparent;color:var(--muted);cursor:pointer;font-size:12.5px;white-space:nowrap;transition:all .15s;}
+nav button:hover{background:var(--row-hover);color:var(--text);}
+nav button.active{background:var(--grad);color:#fff;box-shadow:0 3px 10px rgba(11,143,184,.35);}
+main{padding:16px 16px 48px;max-width:960px;margin:0 auto;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:16px;box-shadow:var(--shadow);}
+.card h2{margin:0 0 12px;font-size:15px;display:flex;align-items:center;gap:8px;}
+.card h2::before{content:'';width:4px;height:16px;border-radius:2px;background:var(--grad);flex:0 0 auto;}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;}
-label{display:block;font-size:11.5px;color:var(--muted);margin-bottom:3px;}
-input,select,textarea{width:100%;padding:7px 8px;border-radius:7px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;margin-bottom:8px;}
-button.btn{padding:8px 14px;border-radius:7px;border:none;background:var(--accent);color:var(--accent-text);cursor:pointer;font-size:13px;}
-button.btn.secondary{background:transparent;border:1px solid var(--border);color:var(--text);}
-button.btn.danger{background:transparent;color:var(--danger);border:1px solid var(--danger);padding:4px 8px;font-size:11.5px;}
-button.btn.small{padding:4px 8px;font-size:11.5px;}
+label{display:block;font-size:11.5px;color:var(--muted);margin-bottom:3px;font-weight:600;}
+input,select,textarea{width:100%;padding:8px 10px;border-radius:9px;border:1px solid var(--border);background:var(--input-bg);color:var(--text);font-size:13px;margin-bottom:8px;outline:none;transition:border-color .15s,box-shadow .15s;}
+input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(11,143,184,.18);}
+button.btn{padding:8px 16px;border-radius:9px;border:none;background:var(--grad);color:#fff;cursor:pointer;font-size:13px;font-weight:600;box-shadow:0 3px 10px rgba(11,143,184,.28);transition:filter .15s,transform .05s;}
+button.btn:hover{filter:brightness(1.08);}
+button.btn:active{transform:translateY(1px);}
+button.btn.secondary{background:transparent;border:1px solid var(--accent);color:var(--accent);box-shadow:none;}
+button.btn.secondary:hover{background:var(--row-hover);}
+button.btn.danger{background:transparent;color:var(--danger);border:1px solid var(--danger);padding:4px 9px;font-size:11.5px;box-shadow:none;}
+button.btn.small{padding:4px 9px;font-size:11.5px;}
 table{width:100%;border-collapse:collapse;font-size:12px;}
-th,td{text-align:left;padding:6px 7px;border-bottom:1px solid var(--border);white-space:nowrap;}
-th{color:var(--muted);font-weight:600;}
-.tablewrap{overflow-x:auto;}
-.pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10.5px;background:var(--tab-bg);}
+th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--border);white-space:nowrap;}
+th{color:var(--muted);font-weight:700;background:var(--th-bg);font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;}
+tr:nth-child(even) td{background:var(--row-alt);}
+tr:hover td{background:var(--row-hover);}
+.tablewrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px;}
+.pill{display:inline-block;padding:2px 10px;border-radius:20px;font-size:10.5px;font-weight:600;background:var(--muted-bg);color:var(--muted-fg);}
+.pill-ok{background:var(--ok-bg);color:var(--ok-fg);}
+.pill-bad{background:var(--bad-bg);color:var(--bad-fg);}
+.pill-warn{background:var(--warn-bg);color:var(--warn-fg);}
+.pill-muted{background:var(--muted-bg);color:var(--muted-fg);}
 .row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
-.stat{background:var(--tab-bg);border-radius:8px;padding:10px;text-align:center;}
-.stat b{display:block;font-size:17px}
-.stat span{font-size:10.5px;color:var(--muted)}
-.statgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;margin-bottom:14px;}
+.stat{background:var(--card);border:1px solid var(--border);border-top:3px solid var(--c,var(--accent));border-radius:12px;padding:12px 8px;text-align:center;box-shadow:var(--shadow);}
+.stat b{display:block;font-size:18px;color:var(--c,var(--accent));}
+.stat span{font-size:10.5px;color:var(--muted);}
+.stat:nth-child(1){--c:#0b8fb8}.stat:nth-child(2){--c:#4f6bed}.stat:nth-child(3){--c:#14b8a6}.stat:nth-child(4){--c:#3b82f6}
+.stat:nth-child(5){--c:#06b6d4}.stat:nth-child(6){--c:#7c6df0}.stat:nth-child(7){--c:#10b981}
+.statgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-bottom:16px;}
 .small{font-size:11px;color:var(--muted);}
-.thumb{width:28px;height:28px;border-radius:6px;object-fit:cover;vertical-align:middle;}
+.thumb{width:30px;height:30px;border-radius:50%;object-fit:cover;vertical-align:middle;border:2px solid var(--border);}
 .cb-list{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
-.cb-item{border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;display:flex;align-items:center;gap:5px;}
+.cb-item{border:1px solid var(--border);border-radius:9px;padding:5px 9px;font-size:12px;display:flex;align-items:center;gap:6px;background:var(--input-bg);}
+.cb-item input[type=checkbox]{width:auto;margin:0;}
 .inactive-row{opacity:.5;}
+.filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;}
+.filters input,.filters select{margin:0;flex:1 1 150px;width:auto;min-width:130px;}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:999px;overflow:hidden;margin-bottom:14px;background:var(--card);}
+.seg button{border:0;background:transparent;padding:8px 16px;color:var(--muted);cursor:pointer;font-size:13px;font-weight:600;}
+.seg button.on{background:var(--grad);color:#fff;}
+.sigbox{margin-top:26px;display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;}
+.sigbox div{min-width:200px;border-top:1px solid var(--muted);padding-top:6px;font-size:12px;color:var(--muted);}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
-<header><h1>🎓 Institute Management System</h1><p>TechLife IT Academy · Sathima · BEETOT English Medium Pre School</p></header>
+<header><div class="brand"><span class="logo">🎓</span><div><h1>Institute Management System</h1><p>TechLife IT Academy · Sathima · BEETOT English Medium Pre School</p></div></div></header>
 <nav id="tabs"></nav>
 <main id="app"></main>
 <script type="module">
@@ -77,7 +105,7 @@ function renameInstituteIfNeeded(kind){
 }
 const COLLECTION_KEYS = ['classes','teachers','students','staff','attendance','tpay','exp','income','admissions'];
 let DB={}, REMOTE={}; COLLECTION_KEYS.forEach(k=>{ DB[k]=[]; REMOTE[k]=[]; });
-let SETTINGS={admissionFee:500, defaultShare:80, adminPassword:'admin123'};
+let SETTINGS={admissionFee:500, defaultShare:80, adminPassword:'admin123', directorName:''};
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
 
 function save(kind){
@@ -98,14 +126,14 @@ COLLECTION_KEYS.forEach(k=>{
   }, err=>notify('Sync error ('+k+'): '+err.message));
 });
 onSnapshot(doc(fsdb,'settings','main'), snap=>{
-  if(snap.exists()) SETTINGS=Object.assign({admissionFee:500, defaultShare:80, adminPassword:'admin123'}, snap.data());
+  if(snap.exists()) SETTINGS=Object.assign({admissionFee:500, defaultShare:80, adminPassword:'admin123', directorName:''}, snap.data());
   safeRerender();
 }, err=>notify('Sync error (settings): '+err.message));
 
 function genNo(prefix, arr){ let max=0; arr.forEach(x=>{ const m=(x.no||'').match(/(\d+)$/); if(m) max=Math.max(max,parseInt(m[1])); }); return prefix+String(max+1).padStart(4,'0'); }
 function age(dob){ if(!dob) return ''; const d=new Date(dob), n=new Date(); let a=n.getFullYear()-d.getFullYear(); const m=n.getMonth()-d.getMonth(); if(m<0||(m===0&&n.getDate()<d.getDate())) a--; return a; }
 function money(n){ return 'Rs. '+(Number(n)||0).toLocaleString(); }
-function notify(msg){ let t=document.getElementById('__toast'); if(!t){ t=el('div',{id:'__toast'}); t.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:8px;font-size:13px;z-index:200;max-width:85%;text-align:center;box-shadow:0 4px 14px rgba(0,0,0,.25);transition:opacity .25s;'; document.body.appendChild(t); } t.textContent=msg; t.style.opacity='1'; clearTimeout(t._timer); t._timer=setTimeout(()=>{ t.style.opacity='0'; },2500); }
+function notify(msg){ let t=document.getElementById('__toast'); if(!t){ t=el('div',{id:'__toast'}); t.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:8px;font-size:13px;z-index:200;max-width:85%;text-align:center;box-shadow:0 4px 14px rgba(0,0,0,.25);transition:opacity .25s;'; document.body.appendChild(t); } t.textContent=msg; t.style.opacity='1'; clearTimeout(t._timer); t._timer=setTimeout(()=>{ t.style.opacity='0'; },Math.max(2500,msg.length*70)); }
 function confirmAdmin(label,onOk){
   const overlay=el('div'); overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px;';
   const box=el('div',{class:'card'}); box.style.cssText='max-width:320px;width:100%;margin:0;';
@@ -172,30 +200,43 @@ function el(tag,attrs={},...kids){ const e=document.createElement(tag); for(cons
 /* Reusable search + sortable-column table. headers: [{label, key, sortable}]. rows: array of data objects.
    searchText(row) -> string to match against the search box. cellsFor(row) -> array of td contents (string or node), same order/length as headers.
    sortVal(row,key) -> value used for sorting that column (defaults to row[key]). */
-function renderFilterSortTable(container, {headers, rows, searchText, cellsFor, sortVal, rowClass, emptyText}){
+const TABLE_STATES={};
+function renderFilterSortTable(container, opts){
+  const {id, headers, rows, searchText, cellsFor, sortVal, rowClass, emptyText, filters}=opts;
   container.innerHTML='';
-  const state = container._tableState || {q:'', sortKey:null, sortDir:1};
-  container._tableState = state;
+  const sid=id||'_default';
+  const state = TABLE_STATES[sid] || (TABLE_STATES[sid]={q:'', sortKey:null, sortDir:1, f:{}});
+  const bar=el('div',{class:'filters'});
   const searchInp=el('input',{type:'text',placeholder:'Search...',value:state.q});
-  searchInp.style.marginBottom='8px';
   searchInp.oninput=()=>{ state.q=searchInp.value; draw(); };
-  container.appendChild(searchInp);
+  bar.appendChild(searchInp);
+  (filters||[]).forEach(f=>{
+    let ctl;
+    if(f.type==='month'){ ctl=el('input',{type:'month'}); ctl.value=state.f[f.key]||''; const w=el('div',{style:'flex:1 1 150px;min-width:130px'}); const lb=el('label',{},f.label); w.appendChild(lb); w.appendChild(ctl); ctl.style.width='100%'; ctl.onchange=()=>{ state.f[f.key]=ctl.value; draw(); }; bar.appendChild(w); return; }
+    ctl=el('select'); ctl.appendChild(el('option',{value:''},f.label+': All')); f.options.forEach(o=>ctl.appendChild(el('option',{value:o.value},o.label))); ctl.value=state.f[f.key]||'';
+    ctl.onchange=()=>{ state.f[f.key]=ctl.value; draw(); };
+    bar.appendChild(ctl);
+  });
+  if((filters||[]).length){ bar.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ state.q=''; state.f={}; renderFilterSortTable(container,opts); }},'Clear filters')); }
+  container.appendChild(bar);
+  const countEl=el('div',{class:'small',style:'margin-bottom:6px'}); container.appendChild(countEl);
   const tw=el('div',{class:'tablewrap'}); container.appendChild(tw);
   function draw(){
     tw.innerHTML='';
     const tbl=el('table');
     const hr=el('tr');
-    headers.forEach(h=>{
-      const label = h.label + (h.sortable && state.sortKey===h.key ? (state.sortDir===1?' ▲':' ▼') : '');
+    headers.forEach(hd=>{
+      const label = hd.label + (hd.sortable && state.sortKey===hd.key ? (state.sortDir===1?' ▲':' ▼') : '');
       const th=el('th',{},label);
-      if(h.sortable){ th.style.cursor='pointer'; th.onclick=()=>{ if(state.sortKey===h.key) state.sortDir=-state.sortDir; else { state.sortKey=h.key; state.sortDir=1; } draw(); }; }
+      if(hd.sortable){ th.style.cursor='pointer'; th.onclick=()=>{ if(state.sortKey===hd.key) state.sortDir=-state.sortDir; else { state.sortKey=hd.key; state.sortDir=1; } draw(); }; }
       hr.appendChild(th);
     });
     tbl.appendChild(hr);
-    let list = rows.filter(r=> !state.q || (searchText(r)||'').toLowerCase().includes(state.q.toLowerCase()) );
+    let list = rows.filter(r=> (!state.q || (searchText(r)||'').toLowerCase().includes(state.q.toLowerCase())) && (filters||[]).every(f=>!state.f[f.key]||f.test(r,state.f[f.key])) );
     if(state.sortKey){ list=list.slice().sort((a,b)=>{
       const av=sortVal?sortVal(a,state.sortKey):(a[state.sortKey]||''); const bv=sortVal?sortVal(b,state.sortKey):(b[state.sortKey]||'');
       if(av<bv) return -1*state.sortDir; if(av>bv) return 1*state.sortDir; return 0; }); }
+    countEl.textContent='Showing '+list.length+' of '+rows.length;
     if(!list.length){ tbl.appendChild(el('tr',{},el('td',{colspan:String(headers.length)},emptyText||'No records found.'))); }
     list.forEach(r=>{ const tr=el('tr'); if(rowClass){ const c=rowClass(r); if(c) tr.className=c; }
       cellsFor(r).forEach(c=> tr.appendChild(typeof c==='string'?el('td',{},c):el('td',{},c)) );
@@ -204,6 +245,29 @@ function renderFilterSortTable(container, {headers, rows, searchText, cellsFor, 
   }
   draw();
 }
+/* month helpers + pay-in-order rule */
+function nextMonth(ym){ let [y,m]=ym.split('-').map(Number); m++; if(m>12){ m=1; y++; } return y+'-'+String(m).padStart(2,'0'); }
+function monthLabel(ym){ const [y,m]=ym.split('-').map(Number); return new Date(y,m-1,1).toLocaleString('en',{month:'long',year:'numeric'}); }
+function firstUnsettledMonthBefore(student,classId,target){
+  const recs=DB.income.filter(e=>e.studentId===student.id&&e.classId===classId&&(e.source==='Monthly Fee'||e.source==='Skipped')&&e.forMonth);
+  if(!recs.length) return null;
+  const earliest=recs.map(e=>e.forMonth).sort()[0];
+  if(earliest>=target) return null;
+  const required=getFee(student,classId,'Monthly Fee');
+  let m=earliest;
+  while(m<target){
+    const paid=recs.filter(e=>e.forMonth===m&&e.source==='Monthly Fee').reduce((a,e)=>a+Number(e.amount),0);
+    const skipped=recs.some(e=>e.forMonth===m&&e.source==='Skipped');
+    if(!skipped && required>0 && paid<required) return m;
+    m=nextMonth(m);
+  }
+  return null;
+}
+/* colour-code status pills automatically */
+const PILL_MAP={paid:'ok',present:'ok',active:'ok',due:'bad',absent:'bad',inactive:'muted',partial:'warn',skipped:'muted',unmarked:'muted'};
+function decoratePills(root){ root.querySelectorAll('.pill:not([data-d])').forEach(p=>{ p.dataset.d='1'; const k=PILL_MAP[p.textContent.trim().toLowerCase()]; if(k) p.classList.add('pill-'+k); }); }
+new MutationObserver(()=>decoratePills(document.getElementById('app'))).observe(document.getElementById('app'),{childList:true,subtree:true});
+function personName(type,id){ const list= type==='student'?DB.students:type==='teacher'?DB.teachers:DB.staff; const p=list.find(x=>x.id===id); return p?(p.no?p.no+' - ':'')+p.firstName+' '+(p.lastName||''):'(removed)'; }
 function compressImage(file){
   return new Promise((resolve,reject)=>{
     const reader=new FileReader();
@@ -297,6 +361,7 @@ function viewClasses(){
   const listCard=el('div',{class:'card'}); listCard.appendChild(el('h2',{},'All Subjects / Classes'));
   const listContainer=el('div'); listCard.appendChild(listContainer);
   renderFilterSortTable(listContainer, {
+    id:'classes', filters:[{label:'Institute',key:'inst',options:INSTITUTES.map(i=>({value:i,label:i})),test:(c,v)=>c.institute===v}],
     headers:[{label:'Institute',key:'institute',sortable:true},{label:'Name',key:'name',sortable:true},{label:'Teacher',key:'teacher',sortable:true},{label:'Share %',key:'sharePercent',sortable:true},{label:'Monthly',key:'monthlyFee',sortable:true},{label:'Daily',key:'dailyFee',sortable:true},{label:'',key:null,sortable:false}],
     rows: DB.classes,
     searchText: c=>{ const t=DB.teachers.find(x=>x.id===c.teacherId); return [c.institute,c.name,t?t.firstName+' '+(t.lastName||''):''].join(' '); },
@@ -324,7 +389,7 @@ function viewPerson(kind){
   if(kind==='staff'){ field('Role','role'); field('NIC','nic'); field('Payment Type','paymentType',null,['Monthly','Daily']); }
   card.appendChild(grid);
 
-  let enrollments=[]; let enrollWrap; let staffInstitutes=[]; let staffInstWrap;
+  let enrollments=[]; let enrollWrap; let staffInstitutes=[]; let staffInstWrap; let applyEnrollFilter=function(){};
   if(kind==='staff'){
     card.appendChild(el('label',{},'Business Units (a staff member can work in more than one)'));
     staffInstWrap=el('div',{class:'cb-list'});
@@ -335,6 +400,13 @@ function viewPerson(kind){
   }
   if(kind==='students'){
     card.appendChild(el('label',{},'Enrolled Subjects / Classes (set a custom fee if this student pays differently — e.g. by ICT knowledge level at TechLife)'));
+    const enrollBar=el('div',{class:'filters'});
+    const enInst=el('select'); enInst.appendChild(el('option',{value:''},'Institute: All')); INSTITUTES.forEach(i=>enInst.appendChild(el('option',{value:i},i)));
+    const enSearch=el('input',{type:'text',placeholder:'Search subject / grade...'});
+    enrollBar.appendChild(enInst); enrollBar.appendChild(enSearch); card.appendChild(enrollBar);
+    const enCount=el('div',{class:'small',style:'margin-bottom:6px'}); card.appendChild(enCount);
+    applyEnrollFilter=function(){ const q=enSearch.value.toLowerCase(); let sel=0; Array.from(enrollWrap.children).forEach(row=>{ const checked=row._cb&&row._cb.checked; if(checked) sel++; const ok=(!enInst.value||row._inst===enInst.value)&&(!q||row._text.includes(q)); row.style.display=(ok||checked)?'':'none'; }); enCount.textContent=sel+' selected (selected subjects always stay visible)'; };
+    enInst.onchange=()=>applyEnrollFilter(); enSearch.oninput=()=>applyEnrollFilter();
     enrollWrap=el('div',{class:'cb-list'}); enrollWrap.style.flexDirection='column'; enrollWrap.style.alignItems='stretch';
     DB.classes.forEach(c=>{
       const row=el('div',{class:'cb-item'}); row.style.cssText='flex-direction:column;align-items:stretch;width:100%;';
@@ -352,13 +424,13 @@ function viewPerson(kind){
       const h2=el('div');h2.appendChild(el('label',{},'Custom Daily Fee'));h2.appendChild(dailyOv);detail.appendChild(h2);
       row.appendChild(detail);
       function sync(){ enrollments = enrollments.filter(e=>e.classId!==c.id); if(cb.checked) enrollments.push({classId:c.id, level:levelSel?levelSel.value:'', monthlyFee:monthlyOv.value, dailyFee:dailyOv.value}); }
-      cb.onchange=()=>{ detail.style.display=cb.checked?'grid':'none'; sync(); };
+      cb.onchange=()=>{ detail.style.display=cb.checked?'grid':'none'; sync(); applyEnrollFilter(); };
       if(levelSel) levelSel.onchange=sync; monthlyOv.onchange=sync; dailyOv.onchange=sync;
       row._refresh=(en)=>{ cb.checked=!!en; detail.style.display=en?'grid':'none'; if(en){ if(levelSel) levelSel.value=en.level||''; monthlyOv.value=en.monthlyFee||''; dailyOv.value=en.dailyFee||''; } else { if(levelSel) levelSel.value=''; monthlyOv.value=''; dailyOv.value=''; } };
-      row._classId=c.id;
+      row._classId=c.id; row._cb=cb; row._inst=c.institute; row._text=(c.institute+' '+c.name).toLowerCase();
       enrollWrap.appendChild(row);
     });
-    card.appendChild(enrollWrap);
+    card.appendChild(enrollWrap); applyEnrollFilter();
   }
   let photoData='';
   card.appendChild(el('label',{},'Photo'));
@@ -375,6 +447,24 @@ function viewPerson(kind){
   }},'Save'); card.appendChild(saveBtn); wrap.appendChild(card);
 
   const listCard=el('div',{class:'card'}); listCard.appendChild(el('h2',{},'All '+kind[0].toUpperCase()+kind.slice(1)));
+  const statusOpts=[{value:'active',label:'Active'},{value:'inactive',label:'Inactive'}];
+  const classOpts=DB.classes.map(c=>({value:c.id,label:c.institute+': '+c.name}));
+  const instOpts=INSTITUTES.map(i=>({value:i,label:i}));
+  const statusFilter={label:'Status',key:'status',options:statusOpts,test:(p,v)=>(p.status||'active')===v};
+  let pFilters=[statusFilter];
+  if(kind==='students') pFilters=[
+    {label:'Institute',key:'inst',options:instOpts,test:(p,v)=>normalizeEnrollments(p).some(e=>{ const c=DB.classes.find(x=>x.id===e.classId); return c&&c.institute===v; })},
+    {label:'Subject / Grade',key:'cls',options:classOpts,test:(p,v)=>isEnrolled(p,v)},
+    {label:'Payment',key:'pay',options:['Monthly','Daily','Free Card'].map(x=>({value:x,label:x})),test:(p,v)=>p.paymentType===v},
+    statusFilter];
+  if(kind==='teachers') pFilters=[
+    {label:'Class taught',key:'cls',options:classOpts,test:(p,v)=>{ const c=DB.classes.find(x=>x.id===v); return !!c&&c.teacherId===p.id; }},
+    {label:'Subject',key:'subj',options:[...new Set(DB.teachers.map(t=>t.subject).filter(Boolean))].sort().map(x=>({value:x,label:x})),test:(p,v)=>p.subject===v},
+    statusFilter];
+  if(kind==='staff') pFilters=[
+    {label:'Business unit',key:'bu',options:instOpts,test:(p,v)=>(p.institutes||[]).includes(v)},
+    {label:'Payment',key:'pay',options:['Monthly','Daily'].map(x=>({value:x,label:x})),test:(p,v)=>p.paymentType===v},
+    statusFilter];
   let heads=[{label:'Photo',key:null,sortable:false},{label:'No',key:'no',sortable:true},{label:'Name',key:'firstName',sortable:true},{label:'Age',key:'dob',sortable:true}];
   if(kind==='teachers') heads=heads.concat([{label:'Subject',key:'subject',sortable:true},{label:'NIC',key:'nic',sortable:false},{label:'Qualifications',key:'qualifications',sortable:false}]);
   if(kind==='students') heads=heads.concat([{label:'Classes',key:'classes',sortable:false},{label:'Father',key:'fatherName',sortable:true},{label:'Mother',key:'motherName',sortable:false},{label:'Skills',key:'skills',sortable:false},{label:'Payment',key:'paymentType',sortable:true}]);
@@ -382,6 +472,7 @@ function viewPerson(kind){
   heads.push({label:'Status',key:'status',sortable:true}); heads.push({label:'',key:null,sortable:false});
   const listContainer=el('div'); listCard.appendChild(listContainer);
   renderFilterSortTable(listContainer, {
+    id:'person-'+kind, filters:pFilters,
     headers: heads,
     rows: DB[kind],
     searchText: p=>{ let parts=[p.no,p.firstName,p.lastName,p.status]; if(kind==='teachers') parts.push(p.subject,p.nic,p.qualifications); if(kind==='students'){ parts.push(p.fatherName,p.motherName,p.skills,p.paymentType); parts.push(normalizeEnrollments(p).map(e=>{const c=DB.classes.find(x=>x.id===e.classId);return c?c.name:'';}).join(' ')); } if(kind==='staff') parts.push(p.role,p.nic,p.paymentType,(p.institutes||[]).join(' ')); return parts.join(' '); },
@@ -397,7 +488,7 @@ function viewPerson(kind){
       const btns=el('div',{class:'row'});
       btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('edit this record', ()=>{
         for(const k in f) f[k].value=p[k]||'';
-        if(kind==='students'){ enrollments=normalizeEnrollments(p).map(e=>Object.assign({},e)); Array.from(enrollWrap.children).forEach(row=>{ if(row._refresh) row._refresh(enrollments.find(e=>e.classId===row._classId)); }); }
+        if(kind==='students'){ enrollments=normalizeEnrollments(p).map(e=>Object.assign({},e)); Array.from(enrollWrap.children).forEach(row=>{ if(row._refresh) row._refresh(enrollments.find(e=>e.classId===row._classId)); }); applyEnrollFilter(); }
         if(kind==='staff'){ staffInstitutes=(p.institutes||[]).slice(); staffInstWrap.querySelectorAll('input[type=checkbox]').forEach(cb=>cb.checked=staffInstitutes.includes(cb.value)); }
         photoData=p.photo||''; if(photoWrap._setPreview) photoWrap._setPreview(photoData); editingId=p.id; window.scrollTo(0,0);
       }); }},'Edit'));
@@ -469,6 +560,10 @@ function viewTPay(){
   const listCard=el('div',{class:'card'}); listCard.appendChild(el('h2',{},'Payment History'));
   const listContainer=el('div'); listCard.appendChild(listContainer);
   renderFilterSortTable(listContainer, {
+    id:'tpay', filters:[
+      {label:'Teacher',key:'t',options:DB.teachers.map(t=>({value:t.id,label:t.no+' - '+t.firstName+' '+(t.lastName||'')})),test:(p,v)=>p.teacherId===v},
+      {label:'Category',key:'cat',options:["From Daily Income","From Owner's Hand","For Owner's Children"].map(x=>({value:x,label:x})),test:(p,v)=>p.category===v},
+      {label:'Month',key:'m',type:'month',test:(p,v)=>(p.date||'').startsWith(v)}],
     headers:[{label:'Date',key:'date',sortable:true},{label:'Teacher',key:'teacher',sortable:true},{label:'Subject',key:'subject',sortable:true},{label:'Category',key:'category',sortable:true},{label:'Amount',key:'amount',sortable:true},{label:'',key:null,sortable:false}],
     rows: DB.tpay.slice().sort((a,b)=>b.date.localeCompare(a.date)),
     searchText: p=>{ const t=DB.teachers.find(x=>x.id===p.teacherId); const c=DB.classes.find(x=>x.id===p.classId); return [p.date,t?t.firstName+' '+(t.lastName||''):'',c?c.name:'',p.category,p.note].join(' '); },
@@ -500,6 +595,9 @@ function viewExp(){
   const listCard=el('div',{class:'card'}); listCard.appendChild(el('h2',{},'Expense History'));
   const listContainer=el('div'); listCard.appendChild(listContainer);
   renderFilterSortTable(listContainer, {
+    id:'exp', filters:[
+      {label:'Category',key:'cat',options:["From Daily Income","From Owner's Hand","Staff Salary"].map(x=>({value:x,label:x})),test:(p,v)=>p.category===v},
+      {label:'Month',key:'m',type:'month',test:(p,v)=>(p.date||'').startsWith(v)}],
     headers:[{label:'Date',key:'date',sortable:true},{label:'Category',key:'category',sortable:true},{label:'Description',key:'description',sortable:true},{label:'Amount',key:'amount',sortable:true},{label:'',key:null,sortable:false}],
     rows: DB.exp.slice().sort((a,b)=>b.date.localeCompare(a.date)),
     searchText: p=>[p.date,p.category,p.description].join(' '),
@@ -532,6 +630,9 @@ function viewAdmissions(){
   const listCard=el('div',{class:'card'}); listCard.appendChild(el('h2',{},'Admission History'));
   const listContainer=el('div'); listCard.appendChild(listContainer);
   renderFilterSortTable(listContainer, {
+    id:'admissions', filters:[
+      {label:'Institute',key:'inst',options:INSTITUTES.map(i=>({value:i,label:i})),test:(p,v)=>{ const s=DB.students.find(x=>x.id===p.studentId); return !!s&&normalizeEnrollments(s).some(e=>{ const c=DB.classes.find(x=>x.id===e.classId); return c&&c.institute===v; }); }},
+      {label:'Month',key:'m',type:'month',test:(p,v)=>(p.date||'').startsWith(v)}],
     headers:[{label:'Date',key:'date',sortable:true},{label:'Student',key:'student',sortable:true},{label:'Amount',key:'amount',sortable:true},{label:'Note',key:'note',sortable:false},{label:'',key:null,sortable:false}],
     rows: DB.admissions.slice().sort((a,b)=>b.date.localeCompare(a.date)),
     searchText: p=>{ const s=DB.students.find(x=>x.id===p.studentId); return [p.date,s?s.firstName+' '+(s.lastName||''):'',p.note].join(' '); },
@@ -587,6 +688,8 @@ function viewIncome(){
       const required=getFee(s,classSel.value,'Monthly Fee');
       const already=DB.income.filter(e=>e.studentId===studentSel.value&&e.classId===classSel.value&&e.source==='Monthly Fee'&&e.forMonth===forMonthInput.value).reduce((sum,e)=>sum+Number(e.amount),0);
       if(required>0 && already>=required){ notify('This student has already fully paid for '+forMonthInput.value+' — record blocked to avoid duplicate payment.'); return; }
+      const blocker=firstUnsettledMonthBefore(s,classSel.value,forMonthInput.value);
+      if(blocker){ notify('Cannot record '+monthLabel(forMonthInput.value)+': '+monthLabel(blocker)+' has not been paid yet. Record '+monthLabel(blocker)+' first (or ask an admin to skip it).'); return; }
     }
     const rec={studentId:studentSel.value,classId:classSel.value,source:sourceSel.value,amount:amtInput.value,date:dateInput.value,forMonth:sourceSel.value==='Monthly Fee'?forMonthInput.value:''};
     if(editingId){ const i=DB.income.findIndex(x=>x.id===editingId); DB.income[i]=Object.assign(DB.income[i],rec); editingId=null; }
@@ -600,30 +703,49 @@ function viewIncome(){
   const monthInput=el('input',{type:'month',value:new Date().toISOString().slice(0,7)}); const mH=el('div'); mH.appendChild(el('label',{},'Month')); mH.appendChild(monthInput); dueCard.appendChild(mH);
   const dueOut=el('div'); dueCard.appendChild(dueOut); wrap.appendChild(dueCard);
   function renderDue(){
-    dueOut.innerHTML=''; const mp=monthInput.value;
-    const tw=el('div',{class:'tablewrap'}); const tbl=el('table');
-    tbl.appendChild(el('tr',{},el('th',{},'Student'),el('th',{},'Subject'),el('th',{},'Institute'),el('th',{},'Status'),el('th',{},'')));
+    const mp=monthInput.value; const rows=[];
     DB.students.filter(s=>s.status!=='inactive'&&s.paymentType==='Monthly').forEach(s=>{
       normalizeEnrollments(s).forEach(en=>{ const c=DB.classes.find(x=>x.id===en.classId); if(!c) return;
         const required=getFee(s,c.id,'Monthly Fee');
         const paidSum=DB.income.filter(e=>e.studentId===s.id&&e.classId===c.id&&e.source==='Monthly Fee'&&e.forMonth===mp).reduce((sum,e)=>sum+Number(e.amount),0);
         const skipped=DB.income.some(e=>e.studentId===s.id&&e.classId===c.id&&e.source==='Skipped'&&e.forMonth===mp);
         const status = skipped ? 'Skipped' : (paidSum<=0 ? 'Due' : (paidSum>=required ? 'Paid' : 'Partial'));
-        const tr=el('tr'); tr.appendChild(el('td',{},s.no+' - '+s.firstName+' '+(s.lastName||''))); tr.appendChild(el('td',{},c.name+(en.level?' ('+en.level+')':''))); tr.appendChild(el('td',{},c.institute));
-        tr.appendChild(el('td',{},el('span',{class:'pill'},status)));
-        const td=el('td',{class:'row'});
-        if(status!=='Paid') td.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ instSel.value=c.institute; refreshClasses(); classSel.value=c.id; refreshStudents(); studentSel.value=s.id; sourceSel.value='Monthly Fee'; forMonthInput.value=mp; updateNoteAndAmount(); window.scrollTo(0,0); }},'Record Payment'));
-        if(status==='Due'||status==='Partial') td.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('skip '+s.firstName+"'s payment for "+mp, ()=>{ DB.income.push({id:uid(),studentId:s.id,classId:c.id,source:'Skipped',amount:0,date:new Date().toISOString().slice(0,10),forMonth:mp}); save('income'); render(); }); }},'Skip'));
-        tr.appendChild(td); tbl.appendChild(tr);
+        rows.push({s,c,en,status,required,paidSum});
       });
     });
-    tw.appendChild(tbl); dueOut.appendChild(tw);
+    renderFilterSortTable(dueOut,{
+      id:'due',
+      headers:[{label:'Student',key:'student',sortable:true},{label:'Subject',key:'subject',sortable:true},{label:'Institute',key:'institute',sortable:true},{label:'Fee',key:'required',sortable:true},{label:'Paid',key:'paidSum',sortable:true},{label:'Status',key:'status',sortable:true},{label:'',key:null,sortable:false}],
+      rows,
+      filters:[
+        {label:'Institute',key:'inst',options:INSTITUTES.map(i=>({value:i,label:i})),test:(r,v)=>r.c.institute===v},
+        {label:'Subject',key:'cls',options:DB.classes.map(c=>({value:c.id,label:c.institute+': '+c.name})),test:(r,v)=>r.c.id===v},
+        {label:'Status',key:'st',options:['Due','Partial','Paid','Skipped'].map(x=>({value:x,label:x})),test:(r,v)=>r.status===v}
+      ],
+      searchText:r=>[r.s.no,r.s.firstName,r.s.lastName,r.c.name,r.c.institute,r.status].join(' '),
+      sortVal:(r,k)=>{ if(k==='student') return r.s.firstName||''; if(k==='subject') return r.c.name; if(k==='institute') return r.c.institute; if(k==='required'||k==='paidSum') return Number(r[k])||0; return r.status; },
+      cellsFor:r=>{
+        const btns=el('div',{class:'row'});
+        const blocker=firstUnsettledMonthBefore(r.s,r.c.id,mp); const targetMonth=blocker||mp;
+        if(r.status!=='Paid') btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ instSel.value=r.c.institute; refreshClasses(); classSel.value=r.c.id; refreshStudents(); studentSel.value=r.s.id; sourceSel.value='Monthly Fee'; forMonthInput.value=targetMonth; updateNoteAndAmount(); window.scrollTo(0,0); }},blocker?('Pay '+monthLabel(blocker)+' first'):'Record Payment'));
+        if(r.status==='Due'||r.status==='Partial') btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('skip '+r.s.firstName+"'s payment for "+mp, ()=>{ DB.income.push({id:uid(),studentId:r.s.id,classId:r.c.id,source:'Skipped',amount:0,date:new Date().toISOString().slice(0,10),forMonth:mp}); save('income'); render(); }); }},'Skip'));
+        return [r.s.no+' - '+r.s.firstName+' '+(r.s.lastName||''), r.c.name+(r.en.level?' ('+r.en.level+')':''), r.c.institute, money(r.required), money(r.paidSum), el('span',{class:'pill'},r.status), btns];
+      }
+    });
   }
   monthInput.onchange=renderDue; renderDue();
 
   const listCard=el('div',{class:'card'}); listCard.appendChild(el('h2',{},'Payment History'));
   const listContainer=el('div'); listCard.appendChild(listContainer);
   renderFilterSortTable(listContainer, {
+    id:'income-history',
+    filters:[
+      {label:'Institute',key:'inst',options:INSTITUTES.map(i=>({value:i,label:i})),test:(p,v)=>{ const c=DB.classes.find(x=>x.id===p.classId); return c&&c.institute===v; }},
+      {label:'Subject',key:'cls',options:DB.classes.map(c=>({value:c.id,label:c.institute+': '+c.name})),test:(p,v)=>p.classId===v},
+      {label:'Source',key:'src',options:['Monthly Fee','Daily Fee','Other','Skipped'].map(x=>({value:x,label:x})),test:(p,v)=>p.source===v},
+      {label:'Date received (month)',key:'recv',type:'month',test:(p,v)=>(p.date||'').startsWith(v)},
+      {label:'For month',key:'forM',type:'month',test:(p,v)=>p.forMonth===v}
+    ],
     headers:[{label:'Date',key:'date',sortable:true},{label:'For Month',key:'forMonth',sortable:true},{label:'Student',key:'student',sortable:true},{label:'Subject',key:'subject',sortable:true},{label:'Source',key:'source',sortable:true},{label:'Amount',key:'amount',sortable:true},{label:'',key:null,sortable:false}],
     rows: DB.income.slice().sort((a,b)=>b.date.localeCompare(a.date)),
     searchText: p=>{ const c=DB.classes.find(x=>x.id===p.classId); const s=DB.students.find(x=>x.id===p.studentId); return [p.date,p.forMonth,s?s.firstName+' '+(s.lastName||''):'',c?c.name:'',p.source].join(' '); },
@@ -643,7 +765,16 @@ function viewIncome(){
 
 /* ---------- REPORTS ---------- */
 function shareOf(c){ return (c && c.sharePercent!==undefined && c.sharePercent!=='') ? Number(c.sharePercent) : SETTINGS.defaultShare; }
+let reportSection='income';
 function viewReports(){
+  const wrap=el('div');
+  const seg=el('div',{class:'seg'});
+  [['income','Income & Salary'],['attendance','Attendance']].forEach(([id,label])=>{ const b=el('button',{onclick:()=>{ reportSection=id; render(); }},label); if(reportSection===id) b.className='on'; seg.appendChild(b); });
+  wrap.appendChild(seg);
+  wrap.appendChild(reportSection==='income'?viewIncomeReports():viewAttendanceReports());
+  return wrap;
+}
+function viewIncomeReports(){
   const wrap=el('div');
   const dCard=el('div',{class:'card'}); dCard.appendChild(el('h2',{},'Daily Income & Profit by Subject'));
   const dateInput=el('input',{type:'date',value:new Date().toISOString().slice(0,10)}); const dH=el('div'); dH.appendChild(el('label',{},'Date')); dH.appendChild(dateInput); dCard.appendChild(dH);
@@ -661,18 +792,28 @@ function viewReports(){
     tw.appendChild(tbl); dOut.appendChild(tw);
 
     dOut.appendChild(el('h2',{style:'font-size:13px;margin:14px 0 6px'},'Student Payments — '+date));
-    const payments=DB.income.filter(e=>e.date===date&&Number(e.amount)>0);
+    const lines=[];
+    DB.income.filter(e=>e.date===date&&Number(e.amount)>0).forEach(pm=>{ const s=DB.students.find(x=>x.id===pm.studentId); const c=DB.classes.find(x=>x.id===pm.classId);
+      lines.push({name:s?s.no+' - '+s.firstName+' '+(s.lastName||''):'(removed)', subj:c?c.name:'(removed)', inst:c?c.institute:'', month:pm.forMonth?monthLabel(pm.forMonth):'—', amount:Number(pm.amount)}); });
+    DB.admissions.filter(a=>a.date===date&&Number(a.amount)>0).forEach(a=>{ const s=DB.students.find(x=>x.id===a.studentId);
+      const insts=s?[...new Set(normalizeEnrollments(s).map(e=>{ const c=DB.classes.find(x=>x.id===e.classId); return c?c.institute:''; }).filter(Boolean))].join(', '):'';
+      lines.push({name:s?s.no+' - '+s.firstName+' '+(s.lastName||''):'(removed)', subj:'Admission Fee', inst:insts||'—', month:'—', amount:Number(a.amount)}); });
+    lines.sort((a,b)=>a.inst.localeCompare(b.inst)||a.subj.localeCompare(b.subj)||a.name.localeCompare(b.name));
+    const payTotal=lines.reduce((s,l)=>s+l.amount,0);
     const tw2=el('div',{class:'tablewrap'}); const tbl2=el('table');
     tbl2.appendChild(el('tr',{},el('th',{},'Student'),el('th',{},'Subject/Grade'),el('th',{},'Institute'),el('th',{},'For Month'),el('th',{},'Fee')));
     let detailRows='';
-    if(!payments.length){ tbl2.appendChild(el('tr',{},el('td',{colspan:'5'},'No student payments recorded for this date.'))); }
-    payments.forEach(p=>{ const s=DB.students.find(x=>x.id===p.studentId); const c=DB.classes.find(x=>x.id===p.classId);
-      const name=s?s.no+' - '+s.firstName+' '+(s.lastName||''):'(removed)'; const subj=c?c.name:'(removed)'; const inst=c?c.institute:'';
-      tbl2.appendChild(el('tr',{},el('td',{},name),el('td',{},subj),el('td',{},inst),el('td',{},p.forMonth||'—'),el('td',{},money(p.amount))));
-      detailRows+='<tr><td>'+name+'</td><td>'+subj+'</td><td>'+inst+'</td><td>'+(p.forMonth||'—')+'</td><td>'+money(p.amount)+'</td></tr>'; });
+    if(!lines.length){ tbl2.appendChild(el('tr',{},el('td',{colspan:'5'},'No student payments recorded for this date.'))); }
+    lines.forEach(l=>{
+      tbl2.appendChild(el('tr',{},el('td',{},l.name),el('td',{},l.subj),el('td',{},l.inst),el('td',{},l.month),el('td',{},money(l.amount))));
+      detailRows+='<tr><td>'+l.name+'</td><td>'+l.subj+'</td><td>'+l.inst+'</td><td>'+l.month+'</td><td style="text-align:right">'+money(l.amount)+'</td></tr>'; });
+    tbl2.appendChild(el('tr',{},el('td',{colspan:'4'},el('b',{},'Total ('+lines.length+' payment'+(lines.length===1?'':'s')+')')),el('td',{},el('b',{},money(payTotal)))));
     tw2.appendChild(tbl2); dOut.appendChild(tw2);
+    const dirName=SETTINGS.directorName||'';
+    dOut.appendChild(el('div',{class:'sigbox'},el('div',{},"Director's Signature"+(dirName?' — '+dirName:'')),el('div',{},'Date: '+date)));
 
-    const body='<h1>Daily Report — '+date+'</h1><h2>Income by Subject</h2><table><tr><th>Subject</th><th>Income</th><th>Teacher\'s Cut</th><th>Profit</th></tr>'+rows+'<tr><td><b>Total</b></td><td><b>'+money(tI)+'</b></td><td><b>'+money(tC)+'</b></td><td><b>'+money(tP)+'</b></td></tr></table><h2>Student Payments</h2><table><tr><th>Student</th><th>Subject/Grade</th><th>Institute</th><th>For Month</th><th>Fee</th></tr>'+(detailRows||'<tr><td colspan="5">No student payments recorded for this date.</td></tr>')+'</table>';
+    const sigHtml='<div style="margin-top:56px;display:flex;justify-content:space-between;gap:30px"><div style="border-top:1px solid #333;padding-top:6px;min-width:240px;font-size:12px">Director\'s Signature'+(dirName?'<br><b>'+dirName+'</b>':'')+'</div><div style="border-top:1px solid #333;padding-top:6px;min-width:170px;font-size:12px">Date: '+date+'</div></div>';
+    const body='<h1>Daily Report — '+date+'</h1><h2>Income by Subject</h2><table><tr><th>Subject</th><th>Income</th><th>Teacher\'s Cut</th><th>Profit</th></tr>'+rows+'<tr><td><b>Total</b></td><td><b>'+money(tI)+'</b></td><td><b>'+money(tC)+'</b></td><td><b>'+money(tP)+'</b></td></tr></table><h2>Student Payments</h2><table><tr><th>Student</th><th>Subject/Grade</th><th>Institute</th><th>For Month</th><th>Fee</th></tr>'+(detailRows||'<tr><td colspan="5">No student payments recorded for this date.</td></tr>')+'<tr><td colspan="4"><b>Total ('+lines.length+' payment'+(lines.length===1?'':'s')+')</b></td><td style="text-align:right"><b>'+money(payTotal)+'</b></td></tr></table>'+sigHtml;
     const btnRow=el('div',{class:'row',style:'margin-top:10px'});
     btnRow.appendChild(el('button',{class:'btn secondary',onclick:()=>exportReport('daily-report-'+date, body, 'jpg')},'Download as JPEG'));
     btnRow.appendChild(el('button',{class:'btn secondary',onclick:()=>exportReport('daily-report-'+date, body, 'pdf')},'Download as PDF'));
@@ -730,6 +871,82 @@ function viewReports(){
   return wrap;
 }
 
+/* ---------- ATTENDANCE REPORTS (daily + monthly) ---------- */
+const capWord=s=>s?s.charAt(0).toUpperCase()+s.slice(1):'';
+function viewAttendanceReports(){
+  const wrap=el('div');
+  const roleOpts=[{value:'student',label:'Students'},{value:'teacher',label:'Teachers'},{value:'staff',label:'Staff'}];
+  const classOpts=DB.classes.map(c=>({value:c.id,label:c.institute+': '+c.name}));
+
+  /* daily */
+  const dCard=el('div',{class:'card'}); dCard.appendChild(el('h2',{},'Daily Attendance Report'));
+  const dateInput=el('input',{type:'date',value:new Date().toISOString().slice(0,10)}); const dH=el('div'); dH.appendChild(el('label',{},'Date')); dH.appendChild(dateInput); dCard.appendChild(dH);
+  const dOut=el('div'); dCard.appendChild(dOut); wrap.appendChild(dCard);
+  function renderDaily(){
+    dOut.innerHTML=''; const date=dateInput.value;
+    const rows=DB.attendance.filter(a=>a.date===date).map(a=>{ const c=DB.classes.find(x=>x.id===a.classId);
+      return {name:personName(a.personType,a.personId), type:a.personType, role:capWord(a.personType), classId:a.classId||'', cls:c?c.institute+': '+c.name:'General (staff)', status:a.status}; });
+    rows.sort((a,b)=>a.cls.localeCompare(b.cls)||a.role.localeCompare(b.role)||a.name.localeCompare(b.name));
+    const present=rows.filter(r=>r.status==='present').length, absent=rows.filter(r=>r.status==='absent').length;
+    dOut.appendChild(el('p',{class:'small'},'Present: '+present+'  ·  Absent: '+absent+'  ·  Total marked: '+rows.length));
+    const host=el('div'); dOut.appendChild(host);
+    renderFilterSortTable(host,{
+      id:'att-daily', rows, emptyText:'No attendance was marked on this date.',
+      headers:[{label:'Subject / Class',key:'cls',sortable:true},{label:'Role',key:'role',sortable:true},{label:'Name',key:'name',sortable:true},{label:'Status',key:'status',sortable:true}],
+      filters:[{label:'Role',key:'role',options:roleOpts,test:(r,v)=>r.type===v},{label:'Subject / Class',key:'cls',options:classOpts,test:(r,v)=>r.classId===v},{label:'Status',key:'st',options:[{value:'present',label:'Present'},{value:'absent',label:'Absent'}],test:(r,v)=>r.status===v}],
+      searchText:r=>[r.name,r.role,r.cls,r.status].join(' '),
+      cellsFor:r=>[r.cls,r.role,r.name,el('span',{class:'pill'},r.status)]
+    });
+    let body='<h1>Daily Attendance Report — '+date+'</h1><p>Present: '+present+' &nbsp; Absent: '+absent+' &nbsp; Total marked: '+rows.length+'</p><table><tr><th>Subject / Class</th><th>Role</th><th>Name</th><th>Status</th></tr>';
+    rows.forEach(r=>{ body+='<tr><td>'+r.cls+'</td><td>'+r.role+'</td><td>'+r.name+'</td><td>'+capWord(r.status)+'</td></tr>'; });
+    if(!rows.length) body+='<tr><td colspan="4">No attendance was marked on this date.</td></tr>';
+    body+='</table>';
+    const btnRow=el('div',{class:'row',style:'margin-top:10px'});
+    btnRow.appendChild(el('button',{class:'btn secondary',onclick:()=>exportReport('attendance-daily-'+date, body, 'jpg')},'Download as JPEG'));
+    btnRow.appendChild(el('button',{class:'btn secondary',onclick:()=>exportReport('attendance-daily-'+date, body, 'pdf')},'Download as PDF'));
+    dOut.appendChild(btnRow);
+  }
+  dateInput.onchange=renderDaily; renderDaily();
+
+  /* monthly */
+  const mCard=el('div',{class:'card'}); mCard.appendChild(el('h2',{},'Monthly Attendance Report'));
+  const monthInput=el('input',{type:'month',value:new Date().toISOString().slice(0,7)}); const mH=el('div'); mH.appendChild(el('label',{},'Month')); mH.appendChild(monthInput); mCard.appendChild(mH);
+  const mOut=el('div'); mCard.appendChild(mOut); wrap.appendChild(mCard);
+  function renderMonthly(){
+    mOut.innerHTML=''; const mp=monthInput.value;
+    const recs=DB.attendance.filter(a=>(a.date||'').startsWith(mp));
+    const map={};
+    recs.forEach(a=>{ const key=a.personType+'|'+a.personId+'|'+(a.classId||'');
+      const o=map[key]||(map[key]={type:a.personType,id:a.personId,classId:a.classId||'',present:0,absent:0});
+      if(a.status==='present') o.present++; else if(a.status==='absent') o.absent++; });
+    const rows=Object.values(map).map(o=>{ const total=o.present+o.absent; const c=DB.classes.find(x=>x.id===o.classId);
+      return {name:personName(o.type,o.id), type:o.type, role:capWord(o.type), classId:o.classId, cls:c?c.institute+': '+c.name:'General (staff)', present:o.present, absent:o.absent, total, pct: total?Math.round(o.present*100/total):0}; });
+    rows.sort((a,b)=>a.cls.localeCompare(b.cls)||a.role.localeCompare(b.role)||a.name.localeCompare(b.name));
+    const daysMarked=new Set(recs.map(a=>a.date)).size;
+    mOut.appendChild(el('p',{class:'small'},monthLabel(mp)+'  ·  Days with attendance marked: '+daysMarked+'  ·  People/classes listed: '+rows.length));
+    const host=el('div'); mOut.appendChild(host);
+    const pctPill=pct=>el('span',{class:'pill '+(pct>=85?'pill-ok':pct>=60?'pill-warn':'pill-bad')},pct+'%');
+    renderFilterSortTable(host,{
+      id:'att-monthly', rows, emptyText:'No attendance was marked in this month.',
+      headers:[{label:'Subject / Class',key:'cls',sortable:true},{label:'Role',key:'role',sortable:true},{label:'Name',key:'name',sortable:true},{label:'Present',key:'present',sortable:true},{label:'Absent',key:'absent',sortable:true},{label:'Total',key:'total',sortable:true},{label:'Attendance %',key:'pct',sortable:true}],
+      filters:[{label:'Role',key:'role',options:roleOpts,test:(r,v)=>r.type===v},{label:'Subject / Class',key:'cls',options:classOpts,test:(r,v)=>r.classId===v}],
+      searchText:r=>[r.name,r.role,r.cls].join(' '),
+      sortVal:(r,k)=> ['present','absent','total','pct'].includes(k)?r[k]:(r[k]||''),
+      cellsFor:r=>[r.cls,r.role,r.name,String(r.present),String(r.absent),String(r.total),pctPill(r.pct)]
+    });
+    let body='<h1>Monthly Attendance Report — '+monthLabel(mp)+'</h1><p>Days with attendance marked: '+daysMarked+'</p><table><tr><th>Subject / Class</th><th>Role</th><th>Name</th><th>Present</th><th>Absent</th><th>Total</th><th>Attendance %</th></tr>';
+    rows.forEach(r=>{ body+='<tr><td>'+r.cls+'</td><td>'+r.role+'</td><td>'+r.name+'</td><td>'+r.present+'</td><td>'+r.absent+'</td><td>'+r.total+'</td><td>'+r.pct+'%</td></tr>'; });
+    if(!rows.length) body+='<tr><td colspan="7">No attendance was marked in this month.</td></tr>';
+    body+='</table>';
+    const btnRow=el('div',{class:'row',style:'margin-top:10px'});
+    btnRow.appendChild(el('button',{class:'btn secondary',onclick:()=>exportReport('attendance-monthly-'+mp, body, 'jpg')},'Download as JPEG'));
+    btnRow.appendChild(el('button',{class:'btn secondary',onclick:()=>exportReport('attendance-monthly-'+mp, body, 'pdf')},'Download as PDF'));
+    mOut.appendChild(btnRow);
+  }
+  monthInput.onchange=renderMonthly; renderMonthly();
+  return wrap;
+}
+
 /* ---------- BACKUP / RESTORE (JSON export-import, e.g. from the earlier claude.ai version) ---------- */
 function exportAllDataJson(){
   const payload={}; COLLECTION_KEYS.forEach(k=>payload[k]=DB[k]); payload.settings=SETTINGS;
@@ -744,7 +961,7 @@ async function importDataJson(file, onDone){
       const list=payload[k]||[];
       for(const rec of list){ if(!rec.id) rec.id=uid(); await setDoc(doc(fsdb,k,rec.id), rec); count++; }
     }
-    if(payload.settings) await setDoc(doc(fsdb,'settings','main'), Object.assign({admissionFee:500,defaultShare:80,adminPassword:'admin123'}, payload.settings));
+    if(payload.settings) await setDoc(doc(fsdb,'settings','main'), Object.assign({admissionFee:500,defaultShare:80,adminPassword:'admin123', directorName:''}, payload.settings));
     onDone(null,count);
   }catch(e){ onDone(e,0); }
 }
@@ -768,13 +985,13 @@ function viewSettings(){
 
   const card=el('div',{class:'card'}); card.appendChild(el('h2',{},'Settings'));
   const grid=el('div',{class:'grid'});
-  const feeInp=el('input',{type:'number',value:SETTINGS.admissionFee}); const shareInp=el('input',{type:'number',value:SETTINGS.defaultShare});
+  const feeInp=el('input',{type:'number',value:SETTINGS.admissionFee}); const dirInp=el('input',{type:'text',value:SETTINGS.directorName||'',placeholder:'e.g. Mr. A. Perera'}); const shareInp=el('input',{type:'number',value:SETTINGS.defaultShare});
   const curPwd=el('input',{type:'password',placeholder:'Current admin password'}); const newPwd=el('input',{type:'password',placeholder:'New admin password (optional)'});
-  [['Default Admission Fee',feeInp],['Default Teacher Share %',shareInp],['Current Admin Password',curPwd],['New Admin Password',newPwd]].forEach(([l,i])=>{ const h=el('div');h.appendChild(el('label',{},l));h.appendChild(i);grid.appendChild(h); });
+  [['Default Admission Fee',feeInp],['Default Teacher Share %',shareInp],['Director Name (printed under the signature line)',dirInp],['Current Admin Password',curPwd],['New Admin Password',newPwd]].forEach(([l,i])=>{ const h=el('div');h.appendChild(el('label',{},l));h.appendChild(i);grid.appendChild(h); });
   card.appendChild(grid);
   card.appendChild(el('button',{class:'btn',onclick:()=>{
     if(curPwd.value!==SETTINGS.adminPassword){ notify('Current password incorrect'); return; }
-    SETTINGS.admissionFee=feeInp.value||SETTINGS.admissionFee; SETTINGS.defaultShare=shareInp.value||SETTINGS.defaultShare;
+    SETTINGS.admissionFee=feeInp.value||SETTINGS.admissionFee; SETTINGS.defaultShare=shareInp.value||SETTINGS.defaultShare; SETTINGS.directorName=dirInp.value;
     if(newPwd.value) SETTINGS.adminPassword=newPwd.value;
     saveSettings(); notify('Settings saved.'); render();
   }},'Save Settings'));
