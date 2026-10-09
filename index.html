@@ -152,6 +152,23 @@ function showSavedDialog(message, promise){
   Promise.resolve(promise).then(()=>{ done=true; clearTimeout(slow); icon.textContent='✅'; title.textContent='Saved'; msg.textContent=message; ok.disabled=false; ok.focus(); })
     .catch(e=>{ done=true; clearTimeout(slow); icon.textContent='⚠️'; title.textContent='Could not save'; msg.textContent=(e&&e.message)||'Please check your connection and try again.'; ok.disabled=false; });
 }
+function normName(s){ return String(s||'').trim().replace(/\s+/g,' ').toLowerCase(); }
+function personKey(p){ return normName(p.firstName)+'|'+normName(p.lastName); }
+function classKey(c){ return normName(c.institute)+'|'+normName(c.name); }
+function duplicateIds(kind){
+  const keyFn=kind==='classes'?classKey:personKey; const counts={};
+  DB[kind].forEach(r=>{ const k=keyFn(r); counts[k]=(counts[k]||0)+1; });
+  const s=new Set(); DB[kind].forEach(r=>{ if(counts[keyFn(r)]>1) s.add(r.id); }); return s;
+}
+function alertDialog(title,message){
+  const overlay=el('div'); overlay.style.cssText='position:fixed;inset:0;background:rgba(8,20,36,.55);display:flex;align-items:center;justify-content:center;z-index:300;padding:16px;';
+  const box=el('div',{class:'card'}); box.style.cssText='max-width:400px;width:100%;margin:0;text-align:center;';
+  const icon=el('div'); icon.style.cssText='font-size:34px;line-height:1;margin-bottom:6px;'; icon.textContent='⚠️';
+  const t=el('h2'); t.style.justifyContent='center'; t.textContent=title;
+  const msg=el('p'); msg.style.cssText='font-size:13px;margin:6px 0 14px;'; msg.textContent=message;
+  const ok=el('button',{class:'btn'},'OK'); ok.onclick=()=>{ if(overlay.parentNode) overlay.parentNode.removeChild(overlay); };
+  box.appendChild(icon); box.appendChild(t); box.appendChild(msg); box.appendChild(ok); overlay.appendChild(box); document.body.appendChild(overlay); ok.focus();
+}
 function confirmAdmin(label,onOk){
   const overlay=el('div'); overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px;';
   const box=el('div',{class:'card'}); box.style.cssText='max-width:320px;width:100%;margin:0;';
@@ -317,7 +334,7 @@ function photoInput(current, onLoad){
 
 const TABS=[{id:'dashboard',label:'Dashboard'},{id:'classes',label:'Subjects/Classes'},{id:'teachers',label:'Teachers'},{id:'students',label:'Students'},{id:'staff',label:'Staff'},{id:'attendance',label:'Attendance'},{id:'tpay',label:'Teacher Payments'},{id:'exp',label:'Expenses'},{id:'admissions',label:'Admissions'},{id:'income',label:'Income'},{id:'reports',label:'Reports'},{id:'settings',label:'Settings'}];
 let active='dashboard';
-function renderTabs(){ const nav=document.getElementById('tabs'); nav.innerHTML=''; TABS.forEach(t=>{ const b=el('button',{onclick:()=>{active=t.id;render();}},t.label); if(t.id===active) b.className='active'; nav.appendChild(b); }); }
+function renderTabs(){ const nav=document.getElementById('tabs'); nav.innerHTML=''; TABS.forEach(t=>{ const b=el('button',{onclick:()=>{ if(t.id==='settings'&&active!=='settings'){ confirmAdmin('open the Settings tab', ()=>{ active='settings'; render(); }); } else { active=t.id; render(); } }},(t.id==='settings'?'🔒 ':'')+t.label); if(t.id===active) b.className='active'; nav.appendChild(b); }); }
 function render(){ attRefresh=null; renderTabs(); const app=document.getElementById('app'); app.innerHTML=''; const fn={dashboard:viewDashboard,classes:viewClasses,teachers:()=>viewPerson('teachers'),students:()=>viewPerson('students'),staff:()=>viewPerson('staff'),attendance:viewAttendance,tpay:viewTPay,exp:viewExp,admissions:viewAdmissions,income:viewIncome,reports:viewReports,settings:viewSettings}[active]; app.appendChild(fn()); }
 
 /* ---------- DASHBOARD ---------- */
@@ -371,6 +388,9 @@ function viewClasses(){
   const saveBtn=el('button',{class:'btn',onclick:()=>{
     if(!nameInp.value){notify('Enter a name');return;}
     const rec={institute:instSel.value,name:nameInp.value,teacherId:teacherSel.value,sharePercent:shareInp.value,monthlyFee:monthlyInp.value,dailyFee:dailyInp.value};
+    { const orig=editingId?DB.classes.find(c=>c.id===editingId):null;
+      if(!orig||classKey(orig)!==classKey(rec)){ const dup=DB.classes.find(c=>c.id!==editingId&&classKey(c)===classKey(rec));
+        if(dup){ alertDialog('Duplicate subject','"'+rec.name.trim()+'" already exists in '+rec.institute+'. A subject name can only be used once per institute — use a different name (for example "Maths – Grade 10").'); return; } } }
     const wasEdit=!!editingId;
     if(editingId){ const i=DB.classes.findIndex(c=>c.id===editingId); DB.classes[i]=Object.assign(DB.classes[i],rec); }
     else { rec.id=uid(); DB.classes.push(rec); }
@@ -379,9 +399,14 @@ function viewClasses(){
   }},'Save'); card.appendChild(saveBtn); wrap.appendChild(card);
 
   const listCard=el('div',{class:'card'}); listCard.appendChild(el('h2',{},'All Subjects / Classes'));
+  const dupClassIds=duplicateIds('classes');
+  if(dupClassIds.size){ const w=el('p',{class:'small'},'⚠ '+dupClassIds.size+' subject records share the same name within an institute. Use the "Duplicates" filter to find them, then rename or delete the extras.'); w.style.color='var(--danger)'; listCard.appendChild(w); }
   const listContainer=el('div'); listCard.appendChild(listContainer);
   renderFilterSortTable(listContainer, {
-    id:'classes', filters:[{label:'Institute',key:'inst',options:INSTITUTES.map(i=>({value:i,label:i})),test:(c,v)=>c.institute===v}],
+    id:'classes', filters:[
+      {label:'Institute',key:'inst',options:INSTITUTES.map(i=>({value:i,label:i})),test:(c,v)=>c.institute===v},
+      {label:'Teacher',key:'teacher',options:DB.teachers.filter(t=>DB.classes.some(c=>c.teacherId===t.id)).sort((a,b)=>(a.firstName||'').localeCompare(b.firstName||'')).map(t=>({value:t.id,label:t.firstName+' '+(t.lastName||'')})),test:(c,v)=>c.teacherId===v},
+      {label:'Duplicates',key:'dup',options:[{value:'yes',label:'Duplicates only'}],test:(c,v)=>dupClassIds.has(c.id)}],
     headers:[{label:'Institute',key:'institute',sortable:true},{label:'Name',key:'name',sortable:true},{label:'Teacher',key:'teacher',sortable:true},{label:'Share %',key:'sharePercent',sortable:true},{label:'Monthly',key:'monthlyFee',sortable:true},{label:'Daily',key:'dailyFee',sortable:true},{label:'',key:null,sortable:false}],
     rows: DB.classes,
     searchText: c=>{ const t=DB.teachers.find(x=>x.id===c.teacherId); return [c.institute,c.name,t?t.firstName+' '+(t.lastName||''):''].join(' '); },
@@ -473,6 +498,11 @@ function viewPerson(kind){
   const saveBtn=el('button',{class:'btn',onclick:()=>{
     if(!f.firstName.value){notify('First name required');return;}
     const rec={}; for(const k in f) rec[k]=f[k].value; rec.photo=photoData;
+    if(kind==='teachers'||kind==='students'){
+      const orig=editingId?DB[kind].find(x=>x.id===editingId):null;
+      if(!orig||personKey(orig)!==personKey(rec)){ const dup=DB[kind].find(x=>x.id!==editingId&&personKey(x)===personKey(rec));
+        if(dup){ alertDialog('Duplicate '+(kind==='teachers'?'teacher':'student'),'A '+(kind==='teachers'?'teacher':'student')+' named "'+rec.firstName.trim()+' '+(rec.lastName||'').trim()+'" already exists ('+dup.no+'). Names cannot be duplicated — if this is a different person, make the name different (for example add an initial).'); return; } }
+    }
     if(kind==='students') rec.enrollments=enrollments.slice();
     if(kind==='staff') rec.institutes=staffInstitutes.slice();
     const wasEdit=!!editingId; let saved=rec;
@@ -483,6 +513,9 @@ function viewPerson(kind){
   }},'Save'); card.appendChild(saveBtn); wrap.appendChild(card);
 
   const listCard=el('div',{class:'card'}); listCard.appendChild(el('h2',{},'All '+kind[0].toUpperCase()+kind.slice(1)));
+  const dupSetPeople=(kind==='teachers'||kind==='students')?duplicateIds(kind):new Set();
+  if(dupSetPeople.size){ const w=el('p',{class:'small'},'⚠ '+dupSetPeople.size+' records share a name with another record. Use the "Duplicates" filter to find them, then rename or delete the extras.'); w.style.color='var(--danger)'; listCard.appendChild(w); }
+  const nameCell=p=>{ const t=p.firstName+' '+(p.lastName||''); if(!dupSetPeople.has(p.id)) return t; const sp=el('span'); sp.appendChild(document.createTextNode(t+' ')); sp.appendChild(el('span',{class:'pill pill-bad'},'Duplicate')); return sp; };
   const statusOpts=[{value:'active',label:'Active'},{value:'inactive',label:'Inactive'}];
   const classOpts=DB.classes.map(c=>({value:c.id,label:c.institute+': '+c.name}));
   const instOpts=INSTITUTES.map(i=>({value:i,label:i}));
@@ -503,6 +536,7 @@ function viewPerson(kind){
     {label:'Business unit',key:'bu',options:instOpts,test:(p,v)=>(p.institutes||[]).includes(v)},
     {label:'Payment',key:'pay',options:['Monthly','Daily'].map(x=>({value:x,label:x})),test:(p,v)=>p.paymentType===v},
     statusFilter];
+  if(kind==='teachers'||kind==='students') pFilters.push({label:'Duplicates',key:'dup',options:[{value:'yes',label:'Duplicates only'}],test:(p,v)=>dupSetPeople.has(p.id)});
   let heads=[{label:'Photo',key:null,sortable:false},{label:'No',key:'no',sortable:true},{label:'Name',key:'firstName',sortable:true},{label:'Age',key:'dob',sortable:true}];
   if(kind==='teachers') heads=heads.concat([{label:'Subject',key:'subject',sortable:true},{label:'NIC',key:'nic',sortable:false},{label:'Qualifications',key:'qualifications',sortable:false}]);
   if(kind==='students') heads=heads.concat([{label:'Classes',key:'classes',sortable:false},{label:'Father',key:'fatherName',sortable:true},{label:'Mother',key:'motherName',sortable:false},{label:'Skills',key:'skills',sortable:false},{label:'Payment',key:'paymentType',sortable:true}]);
@@ -517,7 +551,7 @@ function viewPerson(kind){
     sortVal: (p,key)=>{ if(key==='dob') return p.dob||''; if(key==='firstName') return (p.firstName||'')+' '+(p.lastName||''); return p[key]||''; },
     rowClass: p=> p.status==='inactive' ? 'inactive-row' : '',
     cellsFor: p=>{
-      const cells=[ p.photo?el('img',{class:'thumb',src:p.photo}):el('span',{},'—'), p.no||'', p.firstName+' '+(p.lastName||''), String(age(p.dob)) ];
+      const cells=[ p.photo?el('img',{class:'thumb',src:p.photo}):el('span',{},'—'), p.no||'', nameCell(p), String(age(p.dob)) ];
       if(kind==='teachers') cells.push(p.subject||'', p.nic||'', p.qualifications||'');
       if(kind==='students'){ const names=normalizeEnrollments(p).map(e=>{const c=DB.classes.find(x=>x.id===e.classId); return c?(c.name+(e.level?' ('+e.level+')':'')):'';}).filter(Boolean).join(', ');
         cells.push(names, p.fatherName||'', p.motherName||'', p.skills||'', p.paymentType||''); }
@@ -590,6 +624,7 @@ function viewAttendance(){
       const tr=el('tr'); tr.appendChild(el('td',{},(type==='teacher'?'👨‍🏫 ':'')+p.firstName+' '+(p.lastName||'')));
       tr.appendChild(el('td',{},el('span',{class:'pill'},status)));
       const btns=el('div',{class:'row'}); ['present','absent'].forEach(s=>btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>mark(p.id,type,classId,date,s)},s)));
+      if(existing) btns.appendChild(el('button',{class:'btn small danger',onclick:()=>{ confirmAdmin('unmark '+personName(type,p.id)+"'s attendance", ()=>{ DB.attendance=DB.attendance.filter(a=>a.id!==existing.id); syncState(); save('attendance'); renderList(); notify(personName(type,p.id)+' unmarked.'); }); }},'Unmark'));
       const td=el('td',{}); td.appendChild(btns); tr.appendChild(td); tbl.appendChild(tr); });
     listDiv.appendChild(tbl);
     window.scrollTo(0,y);
