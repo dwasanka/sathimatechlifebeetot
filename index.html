@@ -109,14 +109,17 @@ let SETTINGS={admissionFee:500, defaultShare:80, adminPassword:'admin123', direc
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
 
 function save(kind){
-  const remoteList=REMOTE[kind]||[]; const localList=DB[kind];
+  const remoteList=REMOTE[kind]||[]; const localList=DB[kind]; const ops=[];
   const localIds=new Set(localList.map(r=>r.id));
-  remoteList.forEach(r=>{ if(!localIds.has(r.id)) deleteDoc(doc(fsdb,kind,r.id)).catch(()=>{}); });
+  remoteList.forEach(r=>{ if(!localIds.has(r.id)) ops.push(deleteDoc(doc(fsdb,kind,r.id))); });
   localList.forEach(r=>{ const old=remoteList.find(x=>x.id===r.id);
-    if(!old || JSON.stringify(old)!==JSON.stringify(r)) setDoc(doc(fsdb,kind,r.id), r).catch(e=>notify('Could not sync '+kind+': '+(e&&e.message||'try again')));
+    if(!old || JSON.stringify(old)!==JSON.stringify(r)) ops.push(setDoc(doc(fsdb,kind,r.id), r));
   });
+  const all=Promise.all(ops);
+  all.catch(e=>notify('Could not sync '+kind+': '+(e&&e.message||'try again')));
+  return all;
 }
-function saveSettings(){ setDoc(doc(fsdb,'settings','main'), SETTINGS).catch(()=>notify('Could not save settings.')); }
+function saveSettings(){ const pr=setDoc(doc(fsdb,'settings','main'), SETTINGS); pr.catch(()=>notify('Could not save settings.')); return pr; }
 function safeRerender(){ const ae=document.activeElement; if(!ae||(ae.tagName!=='INPUT'&&ae.tagName!=='SELECT'&&ae.tagName!=='TEXTAREA')) render(); }
 COLLECTION_KEYS.forEach(k=>{
   onSnapshot(collection(fsdb,k), snap=>{
@@ -134,6 +137,21 @@ function genNo(prefix, arr){ let max=0; arr.forEach(x=>{ const m=(x.no||'').matc
 function age(dob){ if(!dob) return ''; const d=new Date(dob), n=new Date(); let a=n.getFullYear()-d.getFullYear(); const m=n.getMonth()-d.getMonth(); if(m<0||(m===0&&n.getDate()<d.getDate())) a--; return a; }
 function money(n){ return 'Rs. '+(Number(n)||0).toLocaleString(); }
 function notify(msg){ let t=document.getElementById('__toast'); if(!t){ t=el('div',{id:'__toast'}); t.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:8px;font-size:13px;z-index:200;max-width:85%;text-align:center;box-shadow:0 4px 14px rgba(0,0,0,.25);transition:opacity .25s;'; document.body.appendChild(t); } t.textContent=msg; t.style.opacity='1'; clearTimeout(t._timer); t._timer=setTimeout(()=>{ t.style.opacity='0'; },Math.max(2500,msg.length*70)); }
+function showSavedDialog(message, promise){
+  const overlay=el('div'); overlay.style.cssText='position:fixed;inset:0;background:rgba(8,20,36,.55);display:flex;align-items:center;justify-content:center;z-index:300;padding:16px;';
+  const box=el('div',{class:'card'}); box.style.cssText='max-width:380px;width:100%;margin:0;text-align:center;';
+  const icon=el('div'); icon.style.cssText='font-size:34px;line-height:1;margin-bottom:6px;'; icon.textContent='⏳';
+  const title=el('h2'); title.style.justifyContent='center'; title.textContent='Saving…';
+  const msg=el('p'); msg.style.cssText='font-size:13px;margin:6px 0 14px;'; msg.textContent=message;
+  const ok=el('button',{class:'btn'},'OK'); ok.disabled=true;
+  const close=()=>{ if(overlay.parentNode) overlay.parentNode.removeChild(overlay); };
+  ok.onclick=close;
+  box.appendChild(icon); box.appendChild(title); box.appendChild(msg); box.appendChild(ok); overlay.appendChild(box); document.body.appendChild(overlay);
+  let done=false;
+  const slow=setTimeout(()=>{ if(done) return; msg.textContent=message+' (Still saving — it will finish automatically when the connection is back. You can close this.)'; ok.disabled=false; },6000);
+  Promise.resolve(promise).then(()=>{ done=true; clearTimeout(slow); icon.textContent='✅'; title.textContent='Saved'; msg.textContent=message; ok.disabled=false; ok.focus(); })
+    .catch(e=>{ done=true; clearTimeout(slow); icon.textContent='⚠️'; title.textContent='Could not save'; msg.textContent=(e&&e.message)||'Please check your connection and try again.'; ok.disabled=false; });
+}
 function confirmAdmin(label,onOk){
   const overlay=el('div'); overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px;';
   const box=el('div',{class:'card'}); box.style.cssText='max-width:320px;width:100%;margin:0;';
@@ -353,9 +371,11 @@ function viewClasses(){
   const saveBtn=el('button',{class:'btn',onclick:()=>{
     if(!nameInp.value){notify('Enter a name');return;}
     const rec={institute:instSel.value,name:nameInp.value,teacherId:teacherSel.value,sharePercent:shareInp.value,monthlyFee:monthlyInp.value,dailyFee:dailyInp.value};
+    const wasEdit=!!editingId;
     if(editingId){ const i=DB.classes.findIndex(c=>c.id===editingId); DB.classes[i]=Object.assign(DB.classes[i],rec); }
     else { rec.id=uid(); DB.classes.push(rec); }
-    save('classes'); editingId=null; render();
+    const pr=save('classes'); editingId=null; render();
+    showSavedDialog('Subject / class "'+rec.name+'" ('+rec.institute+') '+(wasEdit?'updated':'added')+'.', pr);
   }},'Save'); card.appendChild(saveBtn); wrap.appendChild(card);
 
   const listCard=el('div',{class:'card'}); listCard.appendChild(el('h2',{},'All Subjects / Classes'));
@@ -402,17 +422,22 @@ function viewPerson(kind){
     card.appendChild(el('label',{},'Enrolled Subjects / Classes — pick from the dropdown, then set a custom fee if this student pays differently (e.g. by ICT level at TechLife)'));
     const enrollBar=el('div',{class:'filters'});
     const enInst=el('select'); enInst.appendChild(el('option',{value:''},'Institute: All')); INSTITUTES.forEach(i=>enInst.appendChild(el('option',{value:i},i)));
+    const enTeacher=el('select');
     const enSubj=el('select');
-    enrollBar.appendChild(enInst); enrollBar.appendChild(enSubj); card.appendChild(enrollBar);
+    enrollBar.appendChild(enInst); enrollBar.appendChild(enTeacher); enrollBar.appendChild(enSubj); card.appendChild(enrollBar);
     const enCount=el('div',{class:'small',style:'margin-bottom:6px'}); card.appendChild(enCount);
     applyEnrollFilter=function(){
       let sel=0; const rowsAll=Array.from(enrollWrap.children);
       rowsAll.forEach(row=>{ const checked=row._cb&&row._cb.checked; if(checked) sel++; row.style.display=checked?'':'none'; });
-      enSubj.innerHTML=''; enSubj.appendChild(el('option',{value:''},'+ Add a subject / grade...'));
-      rowsAll.filter(row=>!row._cb.checked&&(!enInst.value||row._inst===enInst.value)).forEach(row=>enSubj.appendChild(el('option',{value:row._classId},(enInst.value?'':row._inst+': ')+row._name)));
+      const curT=enTeacher.value; enTeacher.innerHTML=''; enTeacher.appendChild(el('option',{value:''},'Teacher: All'));
+      DB.teachers.filter(t=>DB.classes.some(c=>c.teacherId===t.id&&(!enInst.value||c.institute===enInst.value))).sort((a,b)=>(a.firstName||'').localeCompare(b.firstName||'')).forEach(t=>enTeacher.appendChild(el('option',{value:t.id},t.firstName+' '+(t.lastName||''))));
+      enTeacher.value=Array.from(enTeacher.options).some(o=>o.value===curT)?curT:'';
+      const avail=rowsAll.filter(row=>!row._cb.checked&&(!enInst.value||row._inst===enInst.value)&&(!enTeacher.value||row._teacher===enTeacher.value));
+      enSubj.innerHTML=''; enSubj.appendChild(el('option',{value:''},'+ Add a subject / grade ('+avail.length+' available)...'));
+      avail.forEach(row=>enSubj.appendChild(el('option',{value:row._classId},(enInst.value?'':row._inst+': ')+row._name)));
       enCount.textContent = sel ? sel+' subject'+(sel===1?'':'s')+' selected' : 'No subjects selected yet — choose one from the dropdown above.';
     };
-    enInst.onchange=()=>applyEnrollFilter();
+    enInst.onchange=()=>applyEnrollFilter(); enTeacher.onchange=()=>applyEnrollFilter();
     enSubj.onchange=()=>{ const id=enSubj.value; if(!id) return; const row=Array.from(enrollWrap.children).find(r=>r._classId===id); if(row){ row._cb.checked=true; row._cb.onchange(); } };
     enrollWrap=el('div',{class:'cb-list'}); enrollWrap.style.flexDirection='column'; enrollWrap.style.alignItems='stretch';
     DB.classes.forEach(c=>{
@@ -436,7 +461,7 @@ function viewPerson(kind){
       cb.onchange=()=>{ detail.style.display=cb.checked?'grid':'none'; sync(); applyEnrollFilter(); };
       if(levelSel) levelSel.onchange=sync; monthlyOv.onchange=sync; dailyOv.onchange=sync;
       row._refresh=(en)=>{ cb.checked=!!en; detail.style.display=en?'grid':'none'; if(en){ if(levelSel) levelSel.value=en.level||''; monthlyOv.value=en.monthlyFee||''; dailyOv.value=en.dailyFee||''; } else { if(levelSel) levelSel.value=''; monthlyOv.value=''; dailyOv.value=''; } };
-      row._classId=c.id; row._cb=cb; row._inst=c.institute; row._name=c.name;
+      row._classId=c.id; row._cb=cb; row._inst=c.institute; row._name=c.name; row._teacher=c.teacherId||'';
       enrollWrap.appendChild(row);
     });
     card.appendChild(enrollWrap); applyEnrollFilter();
@@ -450,9 +475,11 @@ function viewPerson(kind){
     const rec={}; for(const k in f) rec[k]=f[k].value; rec.photo=photoData;
     if(kind==='students') rec.enrollments=enrollments.slice();
     if(kind==='staff') rec.institutes=staffInstitutes.slice();
-    if(editingId){ const arr=DB[kind]; const i=arr.findIndex(x=>x.id===editingId); DB[kind][i]=Object.assign(DB[kind][i],rec); }
+    const wasEdit=!!editingId; let saved=rec;
+    if(editingId){ const arr=DB[kind]; const i=arr.findIndex(x=>x.id===editingId); DB[kind][i]=Object.assign(DB[kind][i],rec); saved=DB[kind][i]; }
     else { rec.id=uid(); rec.status='active'; rec.no=genNo(kind==='teachers'?'T':kind==='students'?'S':'F', DB[kind]); DB[kind].push(rec); }
-    save(kind); editingId=null; render();
+    const pr=save(kind); editingId=null; render();
+    showSavedDialog((kind==='teachers'?'Teacher':kind==='students'?'Student':'Staff member')+' '+(saved.no||'')+' — '+saved.firstName+' '+(saved.lastName||'')+' '+(wasEdit?'updated':'added')+'.', pr);
   }},'Save'); card.appendChild(saveBtn); wrap.appendChild(card);
 
   const listCard=el('div',{class:'card'}); listCard.appendChild(el('h2',{},'All '+kind[0].toUpperCase()+kind.slice(1)));
@@ -501,7 +528,7 @@ function viewPerson(kind){
         if(kind==='staff'){ staffInstitutes=(p.institutes||[]).slice(); staffInstWrap.querySelectorAll('input[type=checkbox]').forEach(cb=>cb.checked=staffInstitutes.includes(cb.value)); }
         photoData=p.photo||''; if(photoWrap._setPreview) photoWrap._setPreview(photoData); editingId=p.id; window.scrollTo(0,0);
       }); }},'Edit'));
-      btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ p.status = p.status==='inactive'?'active':'inactive'; save(kind); render(); }}, p.status==='inactive'?'Activate':'Deactivate'));
+      btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ p.status = p.status==='inactive'?'active':'inactive'; const pr=save(kind); render(); showSavedDialog(p.firstName+' '+(p.lastName||'')+' marked '+p.status+'.', pr); }}, p.status==='inactive'?'Activate':'Deactivate'));
       btns.appendChild(el('button',{class:'btn danger',onclick:()=>{ confirmAdmin('delete this record', ()=>{ DB[kind]=DB[kind].filter(x=>x.id!==p.id); save(kind); render(); }); }},'Delete'));
       cells.push(btns);
       return cells;
@@ -526,7 +553,7 @@ function viewAttendance(){
   function mark(personId,personType,classId,date,status){
     const idx=DB.attendance.findIndex(a=>a.personId===personId&&a.date===date&&a.classId===classId);
     if(idx>=0) DB.attendance[idx].status=status; else DB.attendance.push({id:uid(),personId,personType,classId:classId||null,date,status});
-    save('attendance'); renderList();
+    save('attendance'); renderList(); notify(personName(personType,personId)+' marked '+status+'.');
   }
   function renderList(){
     listDiv.innerHTML=''; const date=dateInput.value; const tbl=el('table');
@@ -562,8 +589,10 @@ function viewTPay(){
   card.appendChild(el('p',{class:'small'},'Tip: a teacher earns '+SETTINGS.defaultShare+'% (default, editable per subject) of the income their subject brings in — see Reports for the calculated figure.'));
   card.appendChild(el('button',{class:'btn',onclick:()=>{ if(!teacherSel.value||!amtInput.value){notify('Select teacher and amount');return;}
     const rec={teacherId:teacherSel.value,classId:classSel.value||null,category:catSel.value,amount:amtInput.value,date:dateInput.value,note:noteInput.value};
+    const wasEdit=!!editingId;
     if(editingId){ const i=DB.tpay.findIndex(x=>x.id===editingId); DB.tpay[i]=Object.assign(DB.tpay[i],rec); editingId=null; } else { rec.id=uid(); DB.tpay.push(rec); }
-    save('tpay'); render(); }},'Save Payment'));
+    const pr=save('tpay'); render(); const tch=DB.teachers.find(x=>x.id===rec.teacherId);
+    showSavedDialog('Teacher payment of '+money(rec.amount)+(tch?' to '+tch.firstName+' '+(tch.lastName||''):'')+' '+(wasEdit?'updated':'recorded')+'.', pr); }},'Save Payment'));
   wrap.appendChild(card);
 
   const listCard=el('div',{class:'card'}); listCard.appendChild(el('h2',{},'Payment History'));
@@ -598,8 +627,10 @@ function viewExp(){
   card.appendChild(grid);
   card.appendChild(el('button',{class:'btn',onclick:()=>{ if(!amtInput.value){notify('Enter amount');return;}
     const rec={category:catSel.value,description:descInput.value,amount:amtInput.value,date:dateInput.value};
+    const wasEdit=!!editingId;
     if(editingId){ const i=DB.exp.findIndex(x=>x.id===editingId); DB.exp[i]=Object.assign(DB.exp[i],rec); editingId=null; } else { rec.id=uid(); DB.exp.push(rec); }
-    save('exp'); render(); }},'Save Expense'));
+    const pr=save('exp'); render();
+    showSavedDialog('Expense of '+money(rec.amount)+' ('+rec.category+') '+(wasEdit?'updated':'recorded')+'.', pr); }},'Save Expense'));
   wrap.appendChild(card);
   const listCard=el('div',{class:'card'}); listCard.appendChild(el('h2',{},'Expense History'));
   const listContainer=el('div'); listCard.appendChild(listContainer);
@@ -632,9 +663,11 @@ function viewAdmissions(){
   card.appendChild(grid);
   card.appendChild(el('button',{class:'btn',onclick:()=>{ if(!studentSel.value||!amtInput.value){notify('Select student and amount');return;}
     const rec={studentId:studentSel.value,amount:amtInput.value,date:dateInput.value,note:noteInput.value};
+    const wasEdit=!!editingId; let extra=Promise.resolve();
     if(editingId){ const i=DB.admissions.findIndex(x=>x.id===editingId); DB.admissions[i]=Object.assign(DB.admissions[i],rec); editingId=null; }
-    else { rec.id=uid(); DB.admissions.push(rec); const s=DB.students.find(x=>x.id===studentSel.value); if(s){s.admissionPaid='Yes'; save('students');} }
-    save('admissions'); render(); }},'Save Admission'));
+    else { rec.id=uid(); DB.admissions.push(rec); const s=DB.students.find(x=>x.id===studentSel.value); if(s){s.admissionPaid='Yes'; extra=save('students');} }
+    const pr=Promise.all([save('admissions'),extra]); render(); const stu=DB.students.find(x=>x.id===rec.studentId);
+    showSavedDialog('Admission fee of '+money(rec.amount)+(stu?' for '+stu.firstName+' '+(stu.lastName||''):'')+' '+(wasEdit?'updated':'recorded')+'.', pr); }},'Save Admission'));
   wrap.appendChild(card);
   const listCard=el('div',{class:'card'}); listCard.appendChild(el('h2',{},'Admission History'));
   const listContainer=el('div'); listCard.appendChild(listContainer);
@@ -653,7 +686,6 @@ function viewAdmissions(){
       return [p.date, s?s.firstName+' '+(s.lastName||''):'(removed)', money(p.amount), p.note||'', btns];
     }
   });
-  tw.appendChild(tbl); listCard.appendChild(tw);
   listCard.appendChild(el('p',{class:'small'},'Total recorded: '+money(DB.admissions.reduce((s,p)=>s+Number(p.amount),0))));
   wrap.appendChild(listCard); return wrap;
 }
@@ -701,9 +733,11 @@ function viewIncome(){
       if(blocker){ notify('Cannot record '+monthLabel(forMonthInput.value)+': '+monthLabel(blocker)+' has not been paid yet. Record '+monthLabel(blocker)+' first (or ask an admin to skip it).'); return; }
     }
     const rec={studentId:studentSel.value,classId:classSel.value,source:sourceSel.value,amount:amtInput.value,date:dateInput.value,forMonth:sourceSel.value==='Monthly Fee'?forMonthInput.value:''};
+    const wasEdit=!!editingId;
     if(editingId){ const i=DB.income.findIndex(x=>x.id===editingId); DB.income[i]=Object.assign(DB.income[i],rec); editingId=null; }
     else { rec.id=uid(); DB.income.push(rec); }
-    save('income'); render();
+    const pr=save('income'); render(); const cl=DB.classes.find(x=>x.id===rec.classId);
+    showSavedDialog('Payment of '+money(rec.amount)+' from '+s.firstName+' '+(s.lastName||'')+' for '+(cl?cl.name:'the subject')+(rec.forMonth?' ('+monthLabel(rec.forMonth)+')':'')+' '+(wasEdit?'updated':'recorded')+'.', pr);
   }},'Save Payment'); card.appendChild(saveBtn);
   wrap.appendChild(card);
 
@@ -737,7 +771,7 @@ function viewIncome(){
         const btns=el('div',{class:'row'});
         const blocker=firstUnsettledMonthBefore(r.s,r.c.id,mp); const targetMonth=blocker||mp;
         if(r.status!=='Paid') btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ instSel.value=r.c.institute; refreshClasses(); classSel.value=r.c.id; refreshStudents(); studentSel.value=r.s.id; sourceSel.value='Monthly Fee'; forMonthInput.value=targetMonth; updateNoteAndAmount(); window.scrollTo(0,0); }},blocker?('Pay '+monthLabel(blocker)+' first'):'Record Payment'));
-        if(r.status==='Due'||r.status==='Partial') btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('skip '+r.s.firstName+"'s payment for "+mp, ()=>{ DB.income.push({id:uid(),studentId:r.s.id,classId:r.c.id,source:'Skipped',amount:0,date:new Date().toISOString().slice(0,10),forMonth:mp}); save('income'); render(); }); }},'Skip'));
+        if(r.status==='Due'||r.status==='Partial') btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('skip '+r.s.firstName+"'s payment for "+mp, ()=>{ DB.income.push({id:uid(),studentId:r.s.id,classId:r.c.id,source:'Skipped',amount:0,date:new Date().toISOString().slice(0,10),forMonth:mp}); const pr=save('income'); render(); showSavedDialog('Payment for '+monthLabel(mp)+' marked as skipped for '+r.s.firstName+' '+(r.s.lastName||'')+' ('+r.c.name+').', pr); }); }},'Skip'));
         return [r.s.no+' - '+r.s.firstName+' '+(r.s.lastName||''), r.c.name+(r.en.level?' ('+r.en.level+')':''), r.c.institute, money(r.required), money(r.paidSum), el('span',{class:'pill'},r.status), btns];
       }
     });
@@ -882,6 +916,7 @@ function viewIncomeReports(){
 
 /* ---------- ATTENDANCE REPORTS (daily + monthly) ---------- */
 const capWord=s=>s?s.charAt(0).toUpperCase()+s.slice(1):'';
+const STUDENT_REP={inst:'',cls:'',stu:'',mode:'daily',month:'',year:''};
 function viewAttendanceReports(){
   const wrap=el('div');
   const roleOpts=[{value:'student',label:'Students'},{value:'teacher',label:'Teachers'},{value:'staff',label:'Staff'}];
@@ -897,7 +932,6 @@ function viewAttendanceReports(){
       return {name:personName(a.personType,a.personId), type:a.personType, role:capWord(a.personType), classId:a.classId||'', cls:c?c.institute+': '+c.name:'General (staff)', status:a.status}; });
     rows.sort((a,b)=>a.cls.localeCompare(b.cls)||a.role.localeCompare(b.role)||a.name.localeCompare(b.name));
     const present=rows.filter(r=>r.status==='present').length, absent=rows.filter(r=>r.status==='absent').length;
-    dOut.appendChild(el('p',{class:'small'},'Present: '+present+'  ·  Absent: '+absent+'  ·  Total marked: '+rows.length));
     const host=el('div'); dOut.appendChild(host);
     renderFilterSortTable(host,{
       id:'att-daily', rows, emptyText:'No attendance was marked on this date.',
@@ -906,10 +940,18 @@ function viewAttendanceReports(){
       searchText:r=>[r.name,r.role,r.cls,r.status].join(' '),
       cellsFor:r=>[r.cls,r.role,r.name,el('span',{class:'pill'},r.status)]
     });
-    let body='<h1>Daily Attendance Report — '+date+'</h1><p>Present: '+present+' &nbsp; Absent: '+absent+' &nbsp; Total marked: '+rows.length+'</p><table><tr><th>Subject / Class</th><th>Role</th><th>Name</th><th>Status</th></tr>';
+    let body='<h1>Daily Attendance Report — '+date+'</h1><table><tr><th>Subject / Class</th><th>Role</th><th>Name</th><th>Status</th></tr>';
     rows.forEach(r=>{ body+='<tr><td>'+r.cls+'</td><td>'+r.role+'</td><td>'+r.name+'</td><td>'+capWord(r.status)+'</td></tr>'; });
     if(!rows.length) body+='<tr><td colspan="4">No attendance was marked on this date.</td></tr>';
     body+='</table>';
+    const byCls={}; rows.forEach(r=>{ const o=byCls[r.cls]||(byCls[r.cls]={present:0,absent:0}); if(r.status==='present') o.present++; else if(r.status==='absent') o.absent++; });
+    const sumTw=el('div',{class:'tablewrap',style:'margin-top:12px'}); const sumTbl=el('table');
+    sumTbl.appendChild(el('tr',{},el('th',{},'Summary — Subject / Class'),el('th',{},'Present'),el('th',{},'Absent')));
+    let sumHtml='<h2>Summary</h2><table><tr><th>Subject / Class</th><th>Present</th><th>Absent</th></tr>';
+    Object.keys(byCls).sort().forEach(k=>{ sumTbl.appendChild(el('tr',{},el('td',{},k),el('td',{},String(byCls[k].present)),el('td',{},String(byCls[k].absent)))); sumHtml+='<tr><td>'+k+'</td><td>'+byCls[k].present+'</td><td>'+byCls[k].absent+'</td></tr>'; });
+    sumTbl.appendChild(el('tr',{},el('td',{},el('b',{},'TOTAL ('+rows.length+' marked)')),el('td',{},el('b',{},String(present))),el('td',{},el('b',{},String(absent)))));
+    sumHtml+='<tr><td><b>TOTAL ('+rows.length+' marked)</b></td><td><b>'+present+'</b></td><td><b>'+absent+'</b></td></tr></table>';
+    sumTw.appendChild(sumTbl); dOut.appendChild(sumTw); body+=sumHtml;
     const btnRow=el('div',{class:'row',style:'margin-top:10px'});
     btnRow.appendChild(el('button',{class:'btn secondary',onclick:()=>exportReport('attendance-daily-'+date, body, 'jpg')},'Download as JPEG'));
     btnRow.appendChild(el('button',{class:'btn secondary',onclick:()=>exportReport('attendance-daily-'+date, body, 'pdf')},'Download as PDF'));
@@ -953,6 +995,73 @@ function viewAttendanceReports(){
     mOut.appendChild(btnRow);
   }
   monthInput.onchange=renderMonthly; renderMonthly();
+
+  /* per-student report (daily / monthly) */
+  const sCard=el('div',{class:'card'}); sCard.appendChild(el('h2',{},'Student Attendance Report — daily / monthly'));
+  const sGrid=el('div',{class:'grid'});
+  const sInst=el('select'); sInst.appendChild(el('option',{value:''},'All institutes')); INSTITUTES.forEach(i=>sInst.appendChild(el('option',{value:i},i)));
+  const sClass=el('select'); const sStudent=el('select');
+  const sMode=el('select'); [['daily','Daily — day by day'],['monthly','Monthly summary — whole year']].forEach(([v,l])=>sMode.appendChild(el('option',{value:v},l)));
+  const sMonth=el('input',{type:'month',value:STUDENT_REP.month||new Date().toISOString().slice(0,7)});
+  const sYear=el('input',{type:'number',min:'2000',max:'2100',value:STUDENT_REP.year||String(new Date().getFullYear())});
+  const monthWrap=el('div'); monthWrap.appendChild(el('label',{},'Month')); monthWrap.appendChild(sMonth);
+  const yearWrap=el('div'); yearWrap.appendChild(el('label',{},'Year')); yearWrap.appendChild(sYear);
+  [['Institute',sInst],['Subject / Class (optional)',sClass],['Student',sStudent],['Report type',sMode]].forEach(([l,i])=>{ const d=el('div'); d.appendChild(el('label',{},l)); d.appendChild(i); sGrid.appendChild(d); });
+  sGrid.appendChild(monthWrap); sGrid.appendChild(yearWrap); sCard.appendChild(sGrid);
+  const sOut=el('div'); sCard.appendChild(sOut); wrap.appendChild(sCard);
+  const keepOpt=(sel,val)=>{ sel.value=Array.from(sel.options).some(o=>o.value===val)?val:''; };
+  function syncRep(){ STUDENT_REP.inst=sInst.value; STUDENT_REP.cls=sClass.value; STUDENT_REP.stu=sStudent.value; STUDENT_REP.mode=sMode.value; STUDENT_REP.month=sMonth.value; STUDENT_REP.year=sYear.value; }
+  function fillClasses(){ sClass.innerHTML=''; sClass.appendChild(el('option',{value:''},'All subjects')); DB.classes.filter(c=>!sInst.value||c.institute===sInst.value).forEach(c=>sClass.appendChild(el('option',{value:c.id},(sInst.value?'':c.institute+': ')+c.name))); keepOpt(sClass,STUDENT_REP.cls); }
+  function fillStudents(){ sStudent.innerHTML=''; sStudent.appendChild(el('option',{value:''},'— choose a student —'));
+    DB.students.filter(s=>{ const en=normalizeEnrollments(s); if(sClass.value) return en.some(e=>e.classId===sClass.value); if(sInst.value) return en.some(e=>{ const c=DB.classes.find(x=>x.id===e.classId); return c&&c.institute===sInst.value; }); return true; })
+      .sort((a,b)=>(a.firstName||'').localeCompare(b.firstName||'')).forEach(s=>sStudent.appendChild(el('option',{value:s.id},s.no+' - '+s.firstName+' '+(s.lastName||''))));
+    keepOpt(sStudent,STUDENT_REP.stu); }
+  function renderStudent(){
+    sOut.innerHTML=''; monthWrap.style.display=sMode.value==='daily'?'':'none'; yearWrap.style.display=sMode.value==='monthly'?'':'none';
+    const s=DB.students.find(x=>x.id===sStudent.value);
+    if(!s){ sOut.appendChild(el('p',{class:'small'},'Choose a student to see their attendance.')); return; }
+    const clsName=id=>{ const c=DB.classes.find(x=>x.id===id); return c?c.name:'—'; };
+    const pctOf=(pp,tt)=>tt?Math.round(pp*100/tt):0;
+    const recsAll=DB.attendance.filter(a=>a.personType==='student'&&a.personId===s.id&&(!sClass.value||a.classId===sClass.value));
+    const insts=[...new Set(normalizeEnrollments(s).map(e=>{ const c=DB.classes.find(x=>x.id===e.classId); return c?c.institute:''; }).filter(Boolean))].join(', ');
+    const subjLabel=sClass.value?clsName(sClass.value):'All subjects';
+    let period, headers, bodyRows, present=0, absent=0;
+    if(sMode.value==='daily'){
+      const mp=sMonth.value; period=monthLabel(mp);
+      const recs=recsAll.filter(a=>(a.date||'').startsWith(mp)).sort((a,b)=>a.date.localeCompare(b.date)||clsName(a.classId).localeCompare(clsName(b.classId)));
+      headers=['Date','Day','Subject / Class','Status'];
+      bodyRows=recs.map(a=>{ if(a.status==='present') present++; else if(a.status==='absent') absent++; return [a.date, new Date(a.date+'T00:00:00').toLocaleDateString('en',{weekday:'short'}), clsName(a.classId), a.status]; });
+    } else {
+      const yr=String(sYear.value||new Date().getFullYear()); period=yr;
+      const map={};
+      recsAll.filter(a=>(a.date||'').startsWith(yr+'-')).forEach(a=>{ const m=a.date.slice(0,7); const key=m+'|'+(a.classId||''); const o=map[key]||(map[key]={m,cid:a.classId||'',p:0,a:0}); if(a.status==='present'){ o.p++; present++; } else if(a.status==='absent'){ o.a++; absent++; } });
+      headers=['Month','Subject / Class','Present','Absent','Total','Attendance %'];
+      bodyRows=Object.values(map).sort((x,y)=>x.m.localeCompare(y.m)||clsName(x.cid).localeCompare(clsName(y.cid))).map(o=>[monthLabel(o.m), clsName(o.cid), String(o.p), String(o.a), String(o.p+o.a), pctOf(o.p,o.p+o.a)+'%']);
+    }
+    const total=present+absent;
+    sOut.appendChild(el('p',{class:'small'},s.no+' — '+s.firstName+' '+(s.lastName||'')+(insts?'  ·  '+insts:'')+'  ·  '+subjLabel+'  ·  '+period));
+    const tw=el('div',{class:'tablewrap'}); const tbl=el('table');
+    const hr=el('tr'); headers.forEach(x=>hr.appendChild(el('th',{},x))); tbl.appendChild(hr);
+    if(!bodyRows.length) tbl.appendChild(el('tr',{},el('td',{colspan:String(headers.length)},'No attendance was marked for this student in this period.')));
+    bodyRows.forEach(r=>{ const tr=el('tr'); r.forEach((c,i)=>tr.appendChild(el('td',{}, (sMode.value==='daily'&&i===3)?el('span',{class:'pill'},c):c))); tbl.appendChild(tr); });
+    tw.appendChild(tbl); sOut.appendChild(tw);
+    const stats=el('div',{class:'statgrid',style:'margin-top:12px'}); stats.appendChild(stat(present,'Present')); stats.appendChild(stat(absent,'Absent')); stats.appendChild(stat(total,'Total marked')); stats.appendChild(stat(pctOf(present,total)+'%','Attendance')); sOut.appendChild(stats);
+    if(sMode.value==='daily') sOut.appendChild(el('p',{class:'small'},'Only days on which attendance was marked are listed.'));
+    let body='<h1>Student Attendance — '+s.firstName+' '+(s.lastName||'')+' ('+s.no+')</h1><p>'+(insts?insts+' &nbsp;·&nbsp; ':'')+subjLabel+' &nbsp;·&nbsp; '+period+'</p><table><tr>'+headers.map(x=>'<th>'+x+'</th>').join('')+'</tr>';
+    bodyRows.forEach(r=>{ body+='<tr>'+r.map((c,i)=>'<td>'+((sMode.value==='daily'&&i===3)?capWord(c):c)+'</td>').join('')+'</tr>'; });
+    if(!bodyRows.length) body+='<tr><td colspan="'+headers.length+'">No attendance was marked for this student in this period.</td></tr>';
+    body+='</table><p><b>Present: '+present+' &nbsp; Absent: '+absent+' &nbsp; Total marked: '+total+' &nbsp; Attendance: '+pctOf(present,total)+'%</b></p>';
+    const fname='attendance-student-'+s.no+'-'+period;
+    const btnRow=el('div',{class:'row',style:'margin-top:10px'});
+    btnRow.appendChild(el('button',{class:'btn secondary',onclick:()=>exportReport(fname, body, 'jpg')},'Download as JPEG'));
+    btnRow.appendChild(el('button',{class:'btn secondary',onclick:()=>exportReport(fname, body, 'pdf')},'Download as PDF'));
+    sOut.appendChild(btnRow);
+  }
+  sInst.onchange=()=>{ syncRep(); fillClasses(); syncRep(); fillStudents(); syncRep(); renderStudent(); };
+  sClass.onchange=()=>{ syncRep(); fillStudents(); syncRep(); renderStudent(); };
+  sStudent.onchange=()=>{ syncRep(); renderStudent(); };
+  sMode.onchange=()=>{ syncRep(); renderStudent(); }; sMonth.onchange=sMode.onchange; sYear.onchange=sMode.onchange;
+  sInst.value=STUDENT_REP.inst; fillClasses(); fillStudents(); sMode.value=STUDENT_REP.mode; renderStudent();
   return wrap;
 }
 
@@ -1002,7 +1111,7 @@ function viewSettings(){
     if(curPwd.value!==SETTINGS.adminPassword){ notify('Current password incorrect'); return; }
     SETTINGS.admissionFee=feeInp.value||SETTINGS.admissionFee; SETTINGS.defaultShare=shareInp.value||SETTINGS.defaultShare; SETTINGS.directorName=dirInp.value;
     if(newPwd.value) SETTINGS.adminPassword=newPwd.value;
-    saveSettings(); notify('Settings saved.'); render();
+    const pr=saveSettings(); render(); showSavedDialog('Settings updated.', pr);
   }},'Save Settings'));
   card.appendChild(el('p',{class:'small'},'Default admin password is admin123 unless changed. This password is required to edit or delete any record.'));
   wrap.appendChild(card); return wrap;
