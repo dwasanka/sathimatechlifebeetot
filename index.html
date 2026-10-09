@@ -124,7 +124,7 @@ function safeRerender(){ const ae=document.activeElement; if(!ae||(ae.tagName!==
 COLLECTION_KEYS.forEach(k=>{
   onSnapshot(collection(fsdb,k), snap=>{
     const list=snap.docs.map(d=>Object.assign({}, d.data(), {id:d.id}));
-    REMOTE[k]=list; DB[k]=list.map(r=>Object.assign({},r)); safeRerender();
+    REMOTE[k]=list; DB[k]=list.map(r=>Object.assign({},r)); if(k==='attendance'&&active==='attendance'&&attRefresh) attRefresh(); else safeRerender();
     if(k==='classes'||k==='staff'){ const before=JSON.stringify(DB[k]); renameInstituteIfNeeded(k); if(JSON.stringify(DB[k])!==before) save(k); }
   }, err=>notify('Sync error ('+k+'): '+err.message));
 });
@@ -318,7 +318,7 @@ function photoInput(current, onLoad){
 const TABS=[{id:'dashboard',label:'Dashboard'},{id:'classes',label:'Subjects/Classes'},{id:'teachers',label:'Teachers'},{id:'students',label:'Students'},{id:'staff',label:'Staff'},{id:'attendance',label:'Attendance'},{id:'tpay',label:'Teacher Payments'},{id:'exp',label:'Expenses'},{id:'admissions',label:'Admissions'},{id:'income',label:'Income'},{id:'reports',label:'Reports'},{id:'settings',label:'Settings'}];
 let active='dashboard';
 function renderTabs(){ const nav=document.getElementById('tabs'); nav.innerHTML=''; TABS.forEach(t=>{ const b=el('button',{onclick:()=>{active=t.id;render();}},t.label); if(t.id===active) b.className='active'; nav.appendChild(b); }); }
-function render(){ renderTabs(); const app=document.getElementById('app'); app.innerHTML=''; const fn={dashboard:viewDashboard,classes:viewClasses,teachers:()=>viewPerson('teachers'),students:()=>viewPerson('students'),staff:()=>viewPerson('staff'),attendance:viewAttendance,tpay:viewTPay,exp:viewExp,admissions:viewAdmissions,income:viewIncome,reports:viewReports,settings:viewSettings}[active]; app.appendChild(fn()); }
+function render(){ attRefresh=null; renderTabs(); const app=document.getElementById('app'); app.innerHTML=''; const fn={dashboard:viewDashboard,classes:viewClasses,teachers:()=>viewPerson('teachers'),students:()=>viewPerson('students'),staff:()=>viewPerson('staff'),attendance:viewAttendance,tpay:viewTPay,exp:viewExp,admissions:viewAdmissions,income:viewIncome,reports:viewReports,settings:viewSettings}[active]; app.appendChild(fn()); }
 
 /* ---------- DASHBOARD ---------- */
 function viewDashboard(){
@@ -486,10 +486,12 @@ function viewPerson(kind){
   const statusOpts=[{value:'active',label:'Active'},{value:'inactive',label:'Inactive'}];
   const classOpts=DB.classes.map(c=>({value:c.id,label:c.institute+': '+c.name}));
   const instOpts=INSTITUTES.map(i=>({value:i,label:i}));
+  const teacherOpts=DB.teachers.filter(t=>DB.classes.some(c=>c.teacherId===t.id)).sort((a,b)=>(a.firstName||'').localeCompare(b.firstName||'')).map(t=>({value:t.id,label:t.firstName+' '+(t.lastName||'')}));
   const statusFilter={label:'Status',key:'status',options:statusOpts,test:(p,v)=>(p.status||'active')===v};
   let pFilters=[statusFilter];
   if(kind==='students') pFilters=[
     {label:'Institute',key:'inst',options:instOpts,test:(p,v)=>normalizeEnrollments(p).some(e=>{ const c=DB.classes.find(x=>x.id===e.classId); return c&&c.institute===v; })},
+    {label:'Teacher',key:'teacher',options:teacherOpts,test:(p,v)=>normalizeEnrollments(p).some(e=>{ const c=DB.classes.find(x=>x.id===e.classId); return !!c&&c.teacherId===v; })},
     {label:'Subject / Grade',key:'cls',options:classOpts,test:(p,v)=>isEnrolled(p,v)},
     {label:'Payment',key:'pay',options:['Monthly','Daily','Free Card'].map(x=>({value:x,label:x})),test:(p,v)=>p.paymentType===v},
     statusFilter];
@@ -539,28 +541,48 @@ function viewPerson(kind){
 }
 
 /* ---------- ATTENDANCE ---------- */
+const ATT_STATE={mode:'Student/Teacher (by Subject)',inst:'',teacher:'',cls:'',date:'',q:''};
+let attRefresh=null;
 function viewAttendance(){
   const wrap=el('div'); const card=el('div',{class:'card'}); card.appendChild(el('h2',{},'Mark Attendance'));
   const grid=el('div',{class:'grid'});
   const typeSel=el('select'); ['Student/Teacher (by Subject)','Staff'].forEach(t=>typeSel.appendChild(el('option',{value:t},t)));
-  const classSel=el('select'); DB.classes.forEach(c=>classSel.appendChild(el('option',{value:c.id},c.institute+': '+c.name)));
-  const dateInput=el('input',{type:'date',value:new Date().toISOString().slice(0,10)});
-  [['Mode',typeSel],['Subject/Class',classSel],['Date',dateInput]].forEach(([l,i])=>{ const h=el('div');h.appendChild(el('label',{},l));h.appendChild(i);grid.appendChild(h); });
+  const instSel=el('select'); instSel.appendChild(el('option',{value:''},'All institutes')); INSTITUTES.forEach(i=>instSel.appendChild(el('option',{value:i},i)));
+  const teacherSel=el('select'); const classSel=el('select');
+  const dateInput=el('input',{type:'date',value:ATT_STATE.date||new Date().toISOString().slice(0,10)});
+  const wrappers={};
+  [['mode','Mode',typeSel],['inst','Institute',instSel],['teacher','Teacher',teacherSel],['cls','Subject/Class',classSel],['date','Date',dateInput]].forEach(([k,l,i])=>{ const h=el('div');h.appendChild(el('label',{},l));h.appendChild(i);grid.appendChild(h); wrappers[k]=h; });
   card.appendChild(grid);
-  const searchInp=el('input',{type:'text',placeholder:'Search name...'}); card.appendChild(searchInp);
+  const searchInp=el('input',{type:'text',placeholder:'Search name...',value:ATT_STATE.q}); card.appendChild(searchInp);
   const listDiv=el('div',{class:'tablewrap'}); card.appendChild(listDiv); wrap.appendChild(card);
 
+  function syncState(){ ATT_STATE.mode=typeSel.value; ATT_STATE.inst=instSel.value; ATT_STATE.teacher=teacherSel.value; ATT_STATE.cls=classSel.value; ATT_STATE.date=dateInput.value; ATT_STATE.q=searchInp.value; }
+  function fillTeachers(){
+    const cur=ATT_STATE.teacher; teacherSel.innerHTML=''; teacherSel.appendChild(el('option',{value:''},'All teachers'));
+    DB.teachers.filter(t=>DB.classes.some(c=>c.teacherId===t.id&&(!instSel.value||c.institute===instSel.value))).sort((a,b)=>(a.firstName||'').localeCompare(b.firstName||'')).forEach(t=>teacherSel.appendChild(el('option',{value:t.id},t.firstName+' '+(t.lastName||''))));
+    teacherSel.value=Array.from(teacherSel.options).some(o=>o.value===cur)?cur:'';
+  }
+  function fillClasses(){
+    const cur=ATT_STATE.cls; classSel.innerHTML='';
+    const list=DB.classes.filter(c=>(!instSel.value||c.institute===instSel.value)&&(!teacherSel.value||c.teacherId===teacherSel.value));
+    if(!list.length) classSel.appendChild(el('option',{value:''},'— no matching subjects —'));
+    list.forEach(c=>classSel.appendChild(el('option',{value:c.id},(instSel.value?'':c.institute+': ')+c.name)));
+    classSel.value=list.some(c=>c.id===cur)?cur:(list[0]?list[0].id:'');
+  }
   function mark(personId,personType,classId,date,status){
     const idx=DB.attendance.findIndex(a=>a.personId===personId&&a.date===date&&a.classId===classId);
     if(idx>=0) DB.attendance[idx].status=status; else DB.attendance.push({id:uid(),personId,personType,classId:classId||null,date,status});
-    save('attendance'); renderList(); notify(personName(personType,personId)+' marked '+status+'.');
+    syncState(); save('attendance'); renderList(); notify(personName(personType,personId)+' marked '+status+'.');
   }
   function renderList(){
+    const y=window.scrollY||0;
     listDiv.innerHTML=''; const date=dateInput.value; const tbl=el('table');
     tbl.appendChild(el('tr',{},el('th',{},'Name'),el('th',{},'Status'),el('th',{},'')));
+    const isStaff=typeSel.value==='Staff';
+    ['inst','teacher','cls'].forEach(k=>{ wrappers[k].style.display=isStaff?'none':''; });
     let people=[];
-    if(typeSel.value==='Staff'){ classSel.parentElement.style.display='none'; people=DB.staff.filter(s=>s.status!=='inactive').map(s=>({p:s,type:'staff',classId:null})); }
-    else { classSel.parentElement.style.display='block'; const c=DB.classes.find(x=>x.id===classSel.value); if(c){ const t=DB.teachers.find(x=>x.id===c.teacherId); if(t) people.push({p:t,type:'teacher',classId:c.id});
+    if(isStaff){ people=DB.staff.filter(s=>s.status!=='inactive').map(s=>({p:s,type:'staff',classId:null})); }
+    else { const c=DB.classes.find(x=>x.id===classSel.value); if(c){ const t=DB.teachers.find(x=>x.id===c.teacherId); if(t) people.push({p:t,type:'teacher',classId:c.id});
       DB.students.filter(s=>s.status!=='inactive'&&isEnrolled(s,c.id)).forEach(s=>people.push({p:s,type:'student',classId:c.id})); } }
     const q=searchInp.value.toLowerCase();
     if(q) people=people.filter(({p})=> (p.firstName+' '+(p.lastName||'')).toLowerCase().includes(q));
@@ -570,8 +592,17 @@ function viewAttendance(){
       const btns=el('div',{class:'row'}); ['present','absent'].forEach(s=>btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>mark(p.id,type,classId,date,s)},s)));
       const td=el('td',{}); td.appendChild(btns); tr.appendChild(td); tbl.appendChild(tr); });
     listDiv.appendChild(tbl);
+    window.scrollTo(0,y);
   }
-  typeSel.onchange=renderList; classSel.onchange=renderList; dateInput.onchange=renderList; searchInp.oninput=renderList; renderList();
+  typeSel.onchange=()=>{ syncState(); renderList(); };
+  instSel.onchange=()=>{ syncState(); fillTeachers(); fillClasses(); syncState(); renderList(); };
+  teacherSel.onchange=()=>{ syncState(); fillClasses(); syncState(); renderList(); };
+  classSel.onchange=()=>{ syncState(); renderList(); };
+  dateInput.onchange=()=>{ syncState(); renderList(); };
+  searchInp.oninput=()=>{ syncState(); renderList(); };
+  typeSel.value=ATT_STATE.mode; instSel.value=ATT_STATE.inst;
+  fillTeachers(); fillClasses(); syncState();
+  attRefresh=renderList; renderList();
   return wrap;
 }
 
