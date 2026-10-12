@@ -74,6 +74,7 @@ tr:hover td{background:var(--row-hover);}
 .seg button.on{background:var(--grad);color:#fff;}
 .sigbox{margin-top:26px;display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;}
 .sigbox div{min-width:200px;border-top:1px solid var(--muted);padding-top:6px;font-size:12px;color:var(--muted);}
+.absent-row td{color:var(--danger) !important;font-weight:600;background:rgba(220,38,38,.09) !important;}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -169,6 +170,10 @@ function alertDialog(title,message){
   const ok=el('button',{class:'btn'},'OK'); ok.onclick=()=>{ if(overlay.parentNode) overlay.parentNode.removeChild(overlay); };
   box.appendChild(icon); box.appendChild(t); box.appendChild(msg); box.appendChild(ok); overlay.appendChild(box); document.body.appendChild(overlay); ok.focus();
 }
+const WEEKDAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+function fmtTime(t){ if(!t) return ''; const [hh,mm]=String(t).split(':').map(Number); if(isNaN(hh)) return ''; return (((hh+11)%12)+1)+':'+String(mm||0).padStart(2,'0')+' '+(hh>=12?'PM':'AM'); }
+function classTime(c){ if(!c) return ''; const d=(c.days||[]).slice().sort((a,b)=>WEEKDAYS.indexOf(a)-WEEKDAYS.indexOf(b)).join(', '); const t=c.startTime?(fmtTime(c.startTime)+(c.endTime?' – '+fmtTime(c.endTime):'')):''; return [d,t].filter(Boolean).join(' · '); }
+function trHtml(cells,red){ const st=red?' style="background:#fdecea;color:#b71c1c;font-weight:700"':''; return '<tr>'+cells.map(c=>'<td'+st+'>'+c+'</td>').join('')+'</tr>'; }
 function recordLabel(kind,r){ return kind==='classes'?(r.institute+': '+r.name):((r.no?r.no+' — ':'')+r.firstName+' '+(r.lastName||'')); }
 /* everything that points at a record (so you can see what would be orphaned by deleting it) */
 function relatedSummary(kind,id){
@@ -177,8 +182,9 @@ function relatedSummary(kind,id){
   if(kind==='students'){
     const s=DB.students.find(x=>x.id===id);
     add(s?normalizeEnrollments(s).length:0,'subject enrolment','subject enrolments');
-    add(DB.income.filter(e=>e.studentId===id&&e.source!=='Skipped').length,'payment','payments');
+    add(DB.income.filter(e=>e.studentId===id&&e.source!=='Skipped'&&e.source!=='Fee adjustment').length,'payment','payments');
     add(DB.income.filter(e=>e.studentId===id&&e.source==='Skipped').length,'skipped month','skipped months');
+    add(DB.income.filter(e=>e.studentId===id&&e.source==='Fee adjustment').length,'fee adjustment','fee adjustments');
     add(DB.admissions.filter(a=>a.studentId===id).length,'admission fee','admission fees');
     add(DB.attendance.filter(a=>a.personType==='student'&&a.personId===id).length,'attendance mark','attendance marks');
   } else if(kind==='teachers'){
@@ -187,7 +193,8 @@ function relatedSummary(kind,id){
     add(DB.attendance.filter(a=>a.personType==='teacher'&&a.personId===id).length,'attendance mark','attendance marks');
   } else if(kind==='classes'){
     add(DB.students.filter(s=>isEnrolled(s,id)).length,'enrolled student','enrolled students');
-    add(DB.income.filter(e=>e.classId===id&&e.source!=='Skipped').length,'student payment','student payments');
+    add(DB.income.filter(e=>e.classId===id&&e.source!=='Skipped'&&e.source!=='Fee adjustment').length,'student payment','student payments');
+    add(DB.income.filter(e=>e.classId===id&&e.source==='Fee adjustment').length,'fee adjustment','fee adjustments');
     add(DB.income.filter(e=>e.classId===id&&e.source==='Skipped').length,'skipped month','skipped months');
     add(DB.tpay.filter(t=>t.classId===id).length,'teacher payment','teacher payments');
     add(DB.attendance.filter(a=>a.classId===id).length,'attendance mark','attendance marks');
@@ -400,13 +407,13 @@ function renderFilterSortTable(container, opts){
 function nextMonth(ym){ let [y,m]=ym.split('-').map(Number); m++; if(m>12){ m=1; y++; } return y+'-'+String(m).padStart(2,'0'); }
 function monthLabel(ym){ const [y,m]=ym.split('-').map(Number); return new Date(y,m-1,1).toLocaleString('en',{month:'long',year:'numeric'}); }
 function firstUnsettledMonthBefore(student,classId,target){
-  const recs=DB.income.filter(e=>e.studentId===student.id&&e.classId===classId&&(e.source==='Monthly Fee'||e.source==='Skipped')&&e.forMonth);
+  const recs=DB.income.filter(e=>e.studentId===student.id&&e.classId===classId&&(e.source==='Monthly Fee'||e.source==='Skipped'||e.source==='Fee adjustment')&&e.forMonth);
   if(!recs.length) return null;
   const earliest=recs.map(e=>e.forMonth).sort()[0];
   if(earliest>=target) return null;
-  const required=getFee(student,classId,'Monthly Fee');
   let m=earliest;
   while(m<target){
+    const required=requiredFee(student,classId,m);
     const paid=recs.filter(e=>e.forMonth===m&&e.source==='Monthly Fee').reduce((a,e)=>a+Number(e.amount),0);
     const skipped=recs.some(e=>e.forMonth===m&&e.source==='Skipped');
     if(!skipped && required>0 && paid<required) return m;
@@ -499,11 +506,16 @@ function viewClasses(){
   const shareInp=el('input',{type:'number',value:SETTINGS.defaultShare});
   const monthlyInp=el('input',{type:'number',placeholder:'Monthly fee'});
   const dailyInp=el('input',{type:'number',placeholder:'Daily fee'});
-  [['Institute',instSel],['Subject/Grade Name',nameInp],['Teacher',teacherSel],['Teacher Share %',shareInp],['Monthly Fee',monthlyInp],['Daily Fee',dailyInp]].forEach(([l,i])=>{ const h=el('div');h.appendChild(el('label',{},l));h.appendChild(i);grid.appendChild(h); });
+  const startInp=el('input',{type:'time'}); const endInp=el('input',{type:'time'});
+  [['Institute',instSel],['Subject/Grade Name',nameInp],['Teacher',teacherSel],['Teacher Share %',shareInp],['Monthly Fee',monthlyInp],['Daily Fee',dailyInp],['Class Start Time',startInp],['Class End Time',endInp]].forEach(([l,i])=>{ const h=el('div');h.appendChild(el('label',{},l));h.appendChild(i);grid.appendChild(h); });
   card.appendChild(grid);
+  card.appendChild(el('label',{},'Class days (tick every day this class meets)'));
+  const dayWrap=el('div',{class:'cb-list'}); const dayCbs=[];
+  WEEKDAYS.forEach(d=>{ const cb=el('input',{type:'checkbox',value:d}); dayCbs.push({day:d,cb}); dayWrap.appendChild(el('div',{class:'cb-item'},cb,document.createTextNode(d))); });
+  card.appendChild(dayWrap);
   const saveBtn=el('button',{class:'btn',onclick:()=>{
     if(!nameInp.value){notify('Enter a name');return;}
-    const rec={institute:instSel.value,name:nameInp.value,teacherId:teacherSel.value,sharePercent:shareInp.value,monthlyFee:monthlyInp.value,dailyFee:dailyInp.value};
+    const rec={institute:instSel.value,name:nameInp.value,teacherId:teacherSel.value,sharePercent:shareInp.value,monthlyFee:monthlyInp.value,dailyFee:dailyInp.value,days:dayCbs.filter(x=>x.cb.checked).map(x=>x.day),startTime:startInp.value,endTime:endInp.value};
     { const orig=editingId?DB.classes.find(c=>c.id===editingId):null;
       if(!orig||classKey(orig)!==classKey(rec)){ const dup=DB.classes.find(c=>c.id!==editingId&&classKey(c)===classKey(rec));
         if(dup){ alertDialog('Duplicate subject','"'+rec.name.trim()+'" already exists in '+rec.institute+'. A subject name can only be used once per institute — use a different name (for example "Maths – Grade 10").'); return; } } }
@@ -523,16 +535,16 @@ function viewClasses(){
       {label:'Institute',key:'inst',options:INSTITUTES.map(i=>({value:i,label:i})),test:(c,v)=>c.institute===v},
       {label:'Teacher',key:'teacher',options:DB.teachers.filter(t=>DB.classes.some(c=>c.teacherId===t.id)).sort((a,b)=>(a.firstName||'').localeCompare(b.firstName||'')).map(t=>({value:t.id,label:t.firstName+' '+(t.lastName||'')})),test:(c,v)=>c.teacherId===v},
       {label:'Duplicates',key:'dup',options:[{value:'yes',label:'Duplicates only'}],test:(c,v)=>dupClassIds.has(c.id)}],
-    headers:[{label:'Institute',key:'institute',sortable:true},{label:'Name',key:'name',sortable:true},{label:'Teacher',key:'teacher',sortable:true},{label:'Share %',key:'sharePercent',sortable:true},{label:'Monthly',key:'monthlyFee',sortable:true},{label:'Daily',key:'dailyFee',sortable:true},{label:'Linked records',key:null,sortable:false},{label:'',key:null,sortable:false}],
+    headers:[{label:'Institute',key:'institute',sortable:true},{label:'Name',key:'name',sortable:true},{label:'Teacher',key:'teacher',sortable:true},{label:'Share %',key:'sharePercent',sortable:true},{label:'Monthly',key:'monthlyFee',sortable:true},{label:'Daily',key:'dailyFee',sortable:true},{label:'Class time',key:'time',sortable:false},{label:'Linked records',key:null,sortable:false},{label:'',key:null,sortable:false}],
     rows: DB.classes,
-    searchText: c=>{ const t=DB.teachers.find(x=>x.id===c.teacherId); return [c.institute,c.name,t?t.firstName+' '+(t.lastName||''):''].join(' '); },
+    searchText: c=>{ const t=DB.teachers.find(x=>x.id===c.teacherId); return [c.institute,c.name,classTime(c),t?t.firstName+' '+(t.lastName||''):''].join(' '); },
     sortVal: (c,key)=>{ if(key==='teacher'){ const t=DB.teachers.find(x=>x.id===c.teacherId); return t?t.firstName:''; } if(key==='monthlyFee'||key==='dailyFee'||key==='sharePercent') return Number(c[key])||0; return c[key]||''; },
     cellsFor: c=>{ const t=DB.teachers.find(x=>x.id===c.teacherId);
       const btns=el('div',{class:'row'});
-      btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('edit this subject/class', ()=>{ instSel.value=c.institute; nameInp.value=c.name; teacherSel.value=c.teacherId||''; shareInp.value=c.sharePercent||SETTINGS.defaultShare; monthlyInp.value=c.monthlyFee||''; dailyInp.value=c.dailyFee||''; editingId=c.id; window.scrollTo(0,0); }); }},'Edit'));
+      btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('edit this subject/class', ()=>{ instSel.value=c.institute; nameInp.value=c.name; teacherSel.value=c.teacherId||''; shareInp.value=c.sharePercent||SETTINGS.defaultShare; monthlyInp.value=c.monthlyFee||''; dailyInp.value=c.dailyFee||''; startInp.value=c.startTime||''; endInp.value=c.endTime||''; dayCbs.forEach(x=>{ x.cb.checked=(c.days||[]).includes(x.day); }); editingId=c.id; window.scrollTo(0,0); }); }},'Edit'));
       if(dupClassIds.has(c.id)) btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>openMergeDialog('classes',c)},'Merge'));
       btns.appendChild(el('button',{class:'btn danger',onclick:()=>deleteWithCheck('classes',c)},'Delete'));
-      return [c.institute, c.name, t?t.firstName+' '+(t.lastName||''):'—', String(c.sharePercent||SETTINGS.defaultShare)+'%', money(c.monthlyFee), money(c.dailyFee), relatedText('classes',c.id), btns];
+      return [c.institute, c.name, t?t.firstName+' '+(t.lastName||''):'—', String(c.sharePercent||SETTINGS.defaultShare)+'%', money(c.monthlyFee), money(c.dailyFee), classTime(c)||'—', relatedText('classes',c.id), btns];
     }
   });
   wrap.appendChild(listCard);
@@ -707,6 +719,7 @@ function viewAttendance(){
   [['mode','Mode',typeSel],['inst','Institute',instSel],['teacher','Teacher',teacherSel],['cls','Subject/Class',classSel],['date','Date',dateInput]].forEach(([k,l,i])=>{ const h=el('div');h.appendChild(el('label',{},l));h.appendChild(i);grid.appendChild(h); wrappers[k]=h; });
   card.appendChild(grid);
   const searchInp=el('input',{type:'text',placeholder:'Search name...',value:ATT_STATE.q}); card.appendChild(searchInp);
+  const timeNote=el('p',{class:'small'},''); card.appendChild(timeNote);
   const listDiv=el('div',{class:'tablewrap'}); card.appendChild(listDiv); wrap.appendChild(card);
 
   function syncState(){ ATT_STATE.mode=typeSel.value; ATT_STATE.inst=instSel.value; ATT_STATE.teacher=teacherSel.value; ATT_STATE.cls=classSel.value; ATT_STATE.date=dateInput.value; ATT_STATE.q=searchInp.value; }
@@ -732,6 +745,7 @@ function viewAttendance(){
     listDiv.innerHTML=''; const date=dateInput.value; const tbl=el('table');
     tbl.appendChild(el('tr',{},el('th',{},'Name'),el('th',{},'Status'),el('th',{},'')));
     const isStaff=typeSel.value==='Staff';
+    { const c0=DB.classes.find(x=>x.id===classSel.value); timeNote.textContent=(!isStaff&&c0&&classTime(c0))?'Class time: '+classTime(c0):''; }
     ['inst','teacher','cls'].forEach(k=>{ wrappers[k].style.display=isStaff?'none':''; });
     let people=[];
     if(isStaff){ people=DB.staff.filter(s=>s.status!=='inactive').map(s=>({p:s,type:'staff',classId:null})); }
@@ -740,7 +754,7 @@ function viewAttendance(){
     const q=searchInp.value.toLowerCase();
     if(q) people=people.filter(({p})=> (p.firstName+' '+(p.lastName||'')).toLowerCase().includes(q));
     people.forEach(({p,type,classId})=>{ const existing=DB.attendance.find(a=>a.personId===p.id&&a.date===date&&a.classId===classId); const status=existing?existing.status:'unmarked';
-      const tr=el('tr'); tr.appendChild(el('td',{},(type==='teacher'?'👨‍🏫 ':'')+p.firstName+' '+(p.lastName||'')));
+      const tr=el('tr'); if(status==='absent') tr.className='absent-row'; tr.appendChild(el('td',{},(type==='teacher'?'👨‍🏫 ':'')+p.firstName+' '+(p.lastName||'')));
       tr.appendChild(el('td',{},el('span',{class:'pill'},status)));
       const btns=el('div',{class:'row'}); ['present','absent'].forEach(s=>btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>mark(p.id,type,classId,date,s)},s)));
       if(existing) btns.appendChild(el('button',{class:'btn small danger',onclick:()=>{ confirmAdmin('unmark '+personName(type,p.id)+"'s attendance", ()=>{ DB.attendance=DB.attendance.filter(a=>a.id!==existing.id); syncState(); save('attendance'); renderList(); notify(personName(type,p.id)+' unmarked.'); }); }},'Unmark'));
@@ -878,47 +892,107 @@ function viewAdmissions(){
 }
 
 /* ---------- INCOME (per student, per subject) ---------- */
+const INCOME_UI={trackerMonth:'',prefill:null};
+const ADJUST_REASONS=['Teacher was absent','Joined in the middle of the month','Other'];
+function adjustmentFor(student,classId,month){
+  const list=DB.income.filter(e=>e.studentId===student.id&&e.classId===classId&&e.source==='Fee adjustment'&&e.forMonth===month);
+  if(!list.length) return null;
+  list.sort((a,b)=>(a.date||'').localeCompare(b.date||'')||String(a.id).localeCompare(String(b.id)));
+  return list[list.length-1];
+}
+/* the fee that applies to ONE month: a half-fee / custom adjustment if an admin set one, otherwise the normal fee */
+function requiredFee(student,classId,month){ const a=adjustmentFor(student,classId,month); return a?(Number(a.adjustedFee)||0):getFee(student,classId,'Monthly Fee'); }
+function feeAdjustDialog(student,cls,month,onDone){
+  const full=getFee(student,cls.id,'Monthly Fee'); const sname=student.firstName+' '+(student.lastName||'');
+  const overlay=el('div'); overlay.style.cssText='position:fixed;inset:0;background:rgba(8,20,36,.55);display:flex;align-items:center;justify-content:center;z-index:300;padding:16px;';
+  const box=el('div',{class:'card'}); box.style.cssText='max-width:430px;width:100%;margin:0;max-height:92vh;overflow:auto;';
+  box.appendChild(el('h2',{},'Adjust fee for one month'));
+  const info=el('p',{class:'small'}); info.textContent=sname+' — '+cls.name+' — '+monthLabel(month)+'. Normal fee: '+money(full)+'. Use this when a student should pay less this month (e.g. teacher absence, joined mid-month). The month counts as fully paid once the adjusted fee is paid.'; box.appendChild(info);
+  const modeSel=el('select'); [['half','Half fee (50%)'],['custom','Custom amount']].forEach(([v,l])=>modeSel.appendChild(el('option',{value:v},l)));
+  const customInp=el('input',{type:'number',min:'1',placeholder:'Fee for this month (Rs.)'}); customInp.style.display='none';
+  const reasonSel=el('select'); ADJUST_REASONS.forEach(r=>reasonSel.appendChild(el('option',{value:r},r)));
+  const noteInp=el('input',{type:'text',placeholder:'Note (optional)'});
+  const preview=el('p',{class:'small'}); preview.style.cssText='font-weight:600;color:var(--text);';
+  const feeNow=()=>modeSel.value==='half'?Math.round(full/2):Number(customInp.value);
+  const upd=()=>{ customInp.style.display=modeSel.value==='custom'?'':'none'; const f=feeNow(); preview.textContent=f>0?'Fee for '+monthLabel(month)+' will be '+money(f)+'.':'Enter the fee for this month.'; };
+  modeSel.onchange=upd; customInp.oninput=upd;
+  [['New fee',modeSel],['',customInp],['Reason',reasonSel],['Note',noteInp]].forEach(([l,i])=>{ const d=el('div'); if(l) d.appendChild(el('label',{},l)); d.appendChild(i); box.appendChild(d); });
+  box.appendChild(preview); upd();
+  const row=el('div',{class:'row'}); row.style.cssText='justify-content:flex-end;margin-top:8px;';
+  const close=()=>{ if(overlay.parentNode) overlay.parentNode.removeChild(overlay); };
+  row.appendChild(el('button',{class:'btn secondary',type:'button',onclick:close},'Cancel'));
+  row.appendChild(el('button',{class:'btn',type:'button',onclick:()=>{
+    const fee=feeNow(); if(!(fee>0)){ notify('Enter a fee greater than zero (use Skip if nothing is payable).'); return; }
+    const reason=reasonSel.value, note=noteInp.value; close();
+    confirmAdmin('change '+sname+"'s fee for "+monthLabel(month), ()=>{
+      DB.income=DB.income.filter(e=>!(e.studentId===student.id&&e.classId===cls.id&&e.source==='Fee adjustment'&&e.forMonth===month));
+      DB.income.push({id:uid(),studentId:student.id,classId:cls.id,source:'Fee adjustment',amount:0,adjustedFee:fee,fullFee:full,reason,note,date:new Date().toISOString().slice(0,10),forMonth:month});
+      const pr=save('income'); onDone(); showSavedDialog('Fee for '+monthLabel(month)+' set to '+money(fee)+' ('+reason+') for '+sname+' — '+cls.name+'.', pr);
+    });
+  }},'Apply (needs admin password)'));
+  box.appendChild(row); overlay.appendChild(box); document.body.appendChild(overlay);
+}
+
 function viewIncome(){
   const teacherOpts=DB.teachers.filter(t=>DB.classes.some(c=>c.teacherId===t.id)).sort((a,b)=>(a.firstName||'').localeCompare(b.firstName||'')).map(t=>({value:t.id,label:t.firstName+' '+(t.lastName||'')}));
   const wrap=el('div'); const card=el('div',{class:'card'}); card.appendChild(el('h2',{},'Record Student Payment'));
   let editingId=null;
   const grid=el('div',{class:'grid'});
   const instSel=el('select'); instSel.appendChild(el('option',{value:''},'All Institutes')); INSTITUTES.forEach(i=>instSel.appendChild(el('option',{value:i},i)));
+  const teacherSel=el('select');
   const classSel=el('select'); classSel.appendChild(el('option',{value:''},'— select subject/class —'));
   const studentSel=el('select'); studentSel.appendChild(el('option',{value:''},'— select student —'));
   const sourceSel=el('select'); ['Monthly Fee','Daily Fee','Other'].forEach(s=>sourceSel.appendChild(el('option',{value:s},s)));
   const amtInput=el('input',{type:'number',placeholder:'Amount'}); const dateInput=el('input',{type:'date',value:new Date().toISOString().slice(0,10)});
   const forMonthWrap=el('div'); const forMonthInput=el('input',{type:'month',value:new Date().toISOString().slice(0,7)});
   forMonthWrap.appendChild(el('label',{},'For Month (which billing month this covers)')); forMonthWrap.appendChild(forMonthInput);
-  [['Institute',instSel],['Subject/Class',classSel],['Student',studentSel],['Source',sourceSel],['Amount',amtInput],['Date Received',dateInput]].forEach(([l,i])=>{ const h=el('div');h.appendChild(el('label',{},l));h.appendChild(i);grid.appendChild(h); });
+  [['Institute',instSel],['Teacher',teacherSel],['Subject/Class',classSel],['Student',studentSel],['Source',sourceSel],['Amount',amtInput],['Date Received',dateInput]].forEach(([l,i])=>{ const h=el('div');h.appendChild(el('label',{},l));h.appendChild(i);grid.appendChild(h); });
   card.appendChild(grid); card.appendChild(forMonthWrap);
   const noteEl=el('p',{class:'small'},''); card.appendChild(noteEl);
+  const adjBtn=el('button',{class:'btn small secondary',type:'button',onclick:()=>{
+    const s=DB.students.find(x=>x.id===studentSel.value); const c=DB.classes.find(x=>x.id===classSel.value); if(!s||!c){ notify('Choose the subject and student first.'); return; }
+    feeAdjustDialog(s,c,forMonthInput.value,()=>{ INCOME_UI.prefill={inst:instSel.value,teacher:teacherSel.value,classId:c.id,studentId:s.id,source:'Monthly Fee',forMonth:forMonthInput.value}; render(); });
+  }},'Adjust this month\'s fee (half / custom)…');
+  adjBtn.style.display='none'; card.appendChild(adjBtn);
 
+  function fillTeachers(){ const cur=teacherSel.value; teacherSel.innerHTML=''; teacherSel.appendChild(el('option',{value:''},'All teachers'));
+    DB.teachers.filter(t=>DB.classes.some(c=>c.teacherId===t.id&&(!instSel.value||c.institute===instSel.value))).sort((a,b)=>(a.firstName||'').localeCompare(b.firstName||'')).forEach(t=>teacherSel.appendChild(el('option',{value:t.id},t.firstName+' '+(t.lastName||''))));
+    teacherSel.value=Array.from(teacherSel.options).some(o=>o.value===cur)?cur:''; }
   function refreshClasses(){ classSel.innerHTML=''; classSel.appendChild(el('option',{value:''},'— select subject/class —'));
-    DB.classes.filter(c=>!instSel.value||c.institute===instSel.value).forEach(c=>classSel.appendChild(el('option',{value:c.id},c.institute+': '+c.name)));
+    DB.classes.filter(c=>(!instSel.value||c.institute===instSel.value)&&(!teacherSel.value||c.teacherId===teacherSel.value)).forEach(c=>classSel.appendChild(el('option',{value:c.id},(instSel.value?'':c.institute+': ')+c.name)));
     refreshStudents(); }
   function refreshStudents(){ studentSel.innerHTML=''; studentSel.appendChild(el('option',{value:''},'— select student —'));
     DB.students.filter(s=>s.status!=='inactive'&&isEnrolled(s,classSel.value)).forEach(s=>studentSel.appendChild(el('option',{value:s.id},s.no+' - '+s.firstName+' '+(s.lastName||''))));
-    updateNoteAndAmount(); }
-  function updateNoteAndAmount(){
-    const s=DB.students.find(x=>x.id===studentSel.value);
-    forMonthWrap.style.display = sourceSel.value==='Monthly Fee' ? 'block' : 'none';
-    if(s && s.paymentType==='Free Card') noteEl.textContent='This student is on a Free Card — no fee is normally expected.';
-    else if(s && classSel.value) amtInput.value = getFee(s, classSel.value, sourceSel.value) || amtInput.value, noteEl.textContent='';
-    else noteEl.textContent='';
+    updateNoteAndAmount(true); }
+  function resetTo(inst){ instSel.value=inst||''; fillTeachers(); teacherSel.value=''; refreshClasses(); }
+  function updateNoteAndAmount(auto){
+    const s=DB.students.find(x=>x.id===studentSel.value); const c=DB.classes.find(x=>x.id===classSel.value); const monthly=sourceSel.value==='Monthly Fee';
+    forMonthWrap.style.display = monthly ? 'block' : 'none';
+    adjBtn.style.display = (monthly&&s&&c&&!editingId&&s.paymentType!=='Free Card') ? '' : 'none';
+    if(s && s.paymentType==='Free Card'){ noteEl.textContent='This student is on a Free Card — no fee is normally expected.'; return; }
+    if(!(s&&c)){ noteEl.textContent=''; return; }
+    if(monthly){
+      const m=forMonthInput.value; const req=requiredFee(s,c.id,m); const adj=adjustmentFor(s,c.id,m);
+      const paid=DB.income.filter(e=>e.studentId===s.id&&e.classId===c.id&&e.source==='Monthly Fee'&&e.forMonth===m).reduce((a,e)=>a+Number(e.amount),0);
+      noteEl.textContent='Fee for '+monthLabel(m)+': '+money(req)+(adj?' (adjusted from '+money(getFee(s,c.id,'Monthly Fee'))+' — '+adj.reason+')':'')+(paid?' · already paid '+money(paid)+' · balance '+money(Math.max(req-paid,0)):'');
+      if(auto&&!editingId){ const bal=Math.max(req-paid,0); if(bal>0) amtInput.value=bal; }
+    } else { noteEl.textContent=''; if(auto&&!editingId){ const f=getFee(s,c.id,sourceSel.value); if(f) amtInput.value=f; } }
   }
-  instSel.onchange=refreshClasses; classSel.onchange=refreshStudents; studentSel.onchange=updateNoteAndAmount; sourceSel.onchange=updateNoteAndAmount;
-  refreshClasses();
+  instSel.onchange=()=>{ fillTeachers(); refreshClasses(); }; teacherSel.onchange=refreshClasses; classSel.onchange=refreshStudents;
+  studentSel.onchange=()=>updateNoteAndAmount(true); sourceSel.onchange=()=>updateNoteAndAmount(true); forMonthInput.onchange=()=>updateNoteAndAmount(true);
+  fillTeachers(); refreshClasses();
+  if(INCOME_UI.prefill){ const pf=INCOME_UI.prefill; INCOME_UI.prefill=null;
+    instSel.value=pf.inst||''; fillTeachers(); teacherSel.value=pf.teacher||''; refreshClasses(); classSel.value=pf.classId; refreshStudents(); studentSel.value=pf.studentId; sourceSel.value=pf.source||'Monthly Fee'; if(pf.forMonth) forMonthInput.value=pf.forMonth; updateNoteAndAmount(true); }
 
   const saveBtn=el('button',{class:'btn',onclick:()=>{
     if(!studentSel.value||!classSel.value||!amtInput.value){ notify('Select subject, student and amount'); return; }
     const s=DB.students.find(x=>x.id===studentSel.value);
     if(sourceSel.value==='Monthly Fee' && !editingId){
-      const required=getFee(s,classSel.value,'Monthly Fee');
+      const required=requiredFee(s,classSel.value,forMonthInput.value);
       const already=DB.income.filter(e=>e.studentId===studentSel.value&&e.classId===classSel.value&&e.source==='Monthly Fee'&&e.forMonth===forMonthInput.value).reduce((sum,e)=>sum+Number(e.amount),0);
       if(required>0 && already>=required){ notify('This student has already fully paid for '+forMonthInput.value+' — record blocked to avoid duplicate payment.'); return; }
       const blocker=firstUnsettledMonthBefore(s,classSel.value,forMonthInput.value);
-      if(blocker){ notify('Cannot record '+monthLabel(forMonthInput.value)+': '+monthLabel(blocker)+' has not been paid yet. Record '+monthLabel(blocker)+' first (or ask an admin to skip it).'); return; }
+      if(blocker){ notify('Cannot record '+monthLabel(forMonthInput.value)+': '+monthLabel(blocker)+' has not been paid yet. Record '+monthLabel(blocker)+' first (or ask an admin to skip or adjust it).'); return; }
     }
     const rec={studentId:studentSel.value,classId:classSel.value,source:sourceSel.value,amount:amtInput.value,date:dateInput.value,forMonth:sourceSel.value==='Monthly Fee'?forMonthInput.value:''};
     const wasEdit=!!editingId;
@@ -929,19 +1003,19 @@ function viewIncome(){
   }},'Save Payment'); card.appendChild(saveBtn);
   wrap.appendChild(card);
 
-  // Monthly due/paid tracker
+  // Monthly due/paid tracker (the month you pick stays selected after skipping / adjusting / paying)
   const dueCard=el('div',{class:'card'}); dueCard.appendChild(el('h2',{},'Monthly Payment Status'));
-  const monthInput=el('input',{type:'month',value:new Date().toISOString().slice(0,7)}); const mH=el('div'); mH.appendChild(el('label',{},'Month')); mH.appendChild(monthInput); dueCard.appendChild(mH);
+  const monthInput=el('input',{type:'month',value:INCOME_UI.trackerMonth||new Date().toISOString().slice(0,7)}); const mH=el('div'); mH.appendChild(el('label',{},'Month')); mH.appendChild(monthInput); dueCard.appendChild(mH);
   const dueOut=el('div'); dueCard.appendChild(dueOut); wrap.appendChild(dueCard);
   function renderDue(){
-    const mp=monthInput.value; const rows=[];
+    const mp=monthInput.value; INCOME_UI.trackerMonth=mp; const rows=[];
     DB.students.filter(s=>s.status!=='inactive'&&s.paymentType==='Monthly').forEach(s=>{
       normalizeEnrollments(s).forEach(en=>{ const c=DB.classes.find(x=>x.id===en.classId); if(!c) return;
-        const required=getFee(s,c.id,'Monthly Fee');
+        const adj=adjustmentFor(s,c.id,mp); const required=requiredFee(s,c.id,mp);
         const paidSum=DB.income.filter(e=>e.studentId===s.id&&e.classId===c.id&&e.source==='Monthly Fee'&&e.forMonth===mp).reduce((sum,e)=>sum+Number(e.amount),0);
         const skipped=DB.income.some(e=>e.studentId===s.id&&e.classId===c.id&&e.source==='Skipped'&&e.forMonth===mp);
         const status = skipped ? 'Skipped' : (paidSum<=0 ? 'Due' : (paidSum>=required ? 'Paid' : 'Partial'));
-        rows.push({s,c,en,status,required,paidSum});
+        rows.push({s,c,en,status,required,paidSum,adj});
       });
     });
     renderFilterSortTable(dueOut,{
@@ -959,9 +1033,10 @@ function viewIncome(){
       cellsFor:r=>{
         const btns=el('div',{class:'row'});
         const blocker=firstUnsettledMonthBefore(r.s,r.c.id,mp); const targetMonth=blocker||mp;
-        if(r.status!=='Paid') btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ instSel.value=r.c.institute; refreshClasses(); classSel.value=r.c.id; refreshStudents(); studentSel.value=r.s.id; sourceSel.value='Monthly Fee'; forMonthInput.value=targetMonth; updateNoteAndAmount(); window.scrollTo(0,0); }},blocker?('Pay '+monthLabel(blocker)+' first'):'Record Payment'));
+        if(r.status!=='Paid') btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ resetTo(r.c.institute); classSel.value=r.c.id; refreshStudents(); studentSel.value=r.s.id; sourceSel.value='Monthly Fee'; forMonthInput.value=targetMonth; updateNoteAndAmount(true); window.scrollTo(0,0); }},blocker?('Pay '+monthLabel(blocker)+' first'):'Record Payment'));
+        if(r.status==='Due'||r.status==='Partial') btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>feeAdjustDialog(r.s,r.c,mp,()=>render())},'Adjust fee'));
         if(r.status==='Due'||r.status==='Partial') btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('skip '+r.s.firstName+"'s payment for "+mp, ()=>{ DB.income.push({id:uid(),studentId:r.s.id,classId:r.c.id,source:'Skipped',amount:0,date:new Date().toISOString().slice(0,10),forMonth:mp}); const pr=save('income'); render(); showSavedDialog('Payment for '+monthLabel(mp)+' marked as skipped for '+r.s.firstName+' '+(r.s.lastName||'')+' ('+r.c.name+').', pr); }); }},'Skip'));
-        return [r.s.no+' - '+r.s.firstName+' '+(r.s.lastName||''), r.c.name+(r.en.level?' ('+r.en.level+')':''), r.c.institute, money(r.required), money(r.paidSum), el('span',{class:'pill'},r.status), btns];
+        return [r.s.no+' - '+r.s.firstName+' '+(r.s.lastName||''), r.c.name+(r.en.level?' ('+r.en.level+')':''), r.c.institute, money(r.required)+(r.adj?' (adjusted)':''), money(r.paidSum), el('span',{class:'pill'},r.status), btns];
       }
     });
   }
@@ -976,21 +1051,23 @@ function viewIncome(){
       {label:'Teacher',key:'teacher',options:teacherOpts,test:(p,v)=>{ const c=DB.classes.find(x=>x.id===p.classId); return !!c&&c.teacherId===v; }},
       {label:'Subject',key:'cls',options:DB.classes.map(c=>({value:c.id,label:c.institute+': '+c.name})),test:(p,v)=>p.classId===v},
       {label:'Problems',key:'prob',options:[{value:'orphan',label:'Missing student or subject'}],test:(p)=>!DB.students.some(s=>s.id===p.studentId)||!DB.classes.some(c=>c.id===p.classId)},
-      {label:'Source',key:'src',options:['Monthly Fee','Daily Fee','Other','Skipped'].map(x=>({value:x,label:x})),test:(p,v)=>p.source===v},
+      {label:'Source',key:'src',options:['Monthly Fee','Daily Fee','Other','Skipped','Fee adjustment'].map(x=>({value:x,label:x})),test:(p,v)=>p.source===v},
       {label:'Date received (month)',key:'recv',type:'month',test:(p,v)=>(p.date||'').startsWith(v)},
       {label:'For month',key:'forM',type:'month',test:(p,v)=>p.forMonth===v}
     ],
     headers:[{label:'Date',key:'date',sortable:true},{label:'For Month',key:'forMonth',sortable:true},{label:'Student',key:'student',sortable:true},{label:'Subject',key:'subject',sortable:true},{label:'Source',key:'source',sortable:true},{label:'Amount',key:'amount',sortable:true},{label:'',key:null,sortable:false}],
     rows: DB.income.slice().sort((a,b)=>b.date.localeCompare(a.date)),
-    searchText: p=>{ const c=DB.classes.find(x=>x.id===p.classId); const s=DB.students.find(x=>x.id===p.studentId); return [p.date,p.forMonth,s?s.firstName+' '+(s.lastName||''):'',c?c.name:'',p.source].join(' '); },
+    searchText: p=>{ const c=DB.classes.find(x=>x.id===p.classId); const s=DB.students.find(x=>x.id===p.studentId); return [p.date,p.forMonth,s?s.firstName+' '+(s.lastName||''):'',c?c.name:'',p.source,p.reason].join(' '); },
     sortVal: (p,key)=>{ if(key==='student'){ const s=DB.students.find(x=>x.id===p.studentId); return s?s.firstName:''; } if(key==='subject'){ const c=DB.classes.find(x=>x.id===p.classId); return c?c.name:''; } if(key==='amount') return Number(p.amount)||0; return p[key]||''; },
     cellsFor: p=>{ const c=DB.classes.find(x=>x.id===p.classId); const s=DB.students.find(x=>x.id===p.studentId);
+      const special=(p.source==='Skipped'||p.source==='Fee adjustment');
       const btns=el('div',{class:'row'});
-      btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('edit this payment record', ()=>{
-        instSel.value=c?c.institute:''; refreshClasses(); classSel.value=p.classId; refreshStudents(); studentSel.value=p.studentId; sourceSel.value=p.source; amtInput.value=p.amount; dateInput.value=p.date; forMonthInput.value=p.forMonth||new Date().toISOString().slice(0,7); updateNoteAndAmount(); editingId=p.id; window.scrollTo(0,0);
+      if(!special) btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('edit this payment record', ()=>{
+        resetTo(c?c.institute:''); classSel.value=p.classId; refreshStudents(); studentSel.value=p.studentId; sourceSel.value=p.source; amtInput.value=p.amount; dateInput.value=p.date; forMonthInput.value=p.forMonth||new Date().toISOString().slice(0,7); editingId=p.id; updateNoteAndAmount(false); window.scrollTo(0,0);
       }); }},'Edit'));
       btns.appendChild(el('button',{class:'btn danger',onclick:()=>{ confirmAdmin('delete this payment record', ()=>{ DB.income=DB.income.filter(x=>x.id!==p.id); save('income'); render(); }); }},'Delete'));
-      return [p.date, p.forMonth||'—', s?s.no+' - '+s.firstName+' '+(s.lastName||''):'(removed)', c?c.name:'(removed)', el('span',{class:'pill'},p.source), money(p.amount), btns];
+      const amountCell = p.source==='Fee adjustment' ? 'Fee set to '+money(p.adjustedFee)+' ('+(p.reason||'adjusted')+')' : (p.source==='Skipped' ? 'Skipped' : money(p.amount));
+      return [p.date, p.forMonth||'—', s?s.no+' - '+s.firstName+' '+(s.lastName||''):'(removed)', c?c.name:'(removed)', el('span',{class:'pill'},p.source), amountCell, btns];
     }
   });
   listCard.appendChild(el('p',{class:'small'},'Total recorded: '+money(DB.income.reduce((s,p)=>s+Number(p.amount),0))));
@@ -1003,9 +1080,9 @@ let reportSection='income';
 function viewReports(){
   const wrap=el('div');
   const seg=el('div',{class:'seg'});
-  [['income','Income & Salary'],['attendance','Attendance']].forEach(([id,label])=>{ const b=el('button',{onclick:()=>{ reportSection=id; render(); }},label); if(reportSection===id) b.className='on'; seg.appendChild(b); });
+  [['income','Income & Salary'],['attendance','Attendance'],['expenses','Expenses']].forEach(([id,label])=>{ const b=el('button',{onclick:()=>{ reportSection=id; render(); }},label); if(reportSection===id) b.className='on'; seg.appendChild(b); });
   wrap.appendChild(seg);
-  wrap.appendChild(reportSection==='income'?viewIncomeReports():viewAttendanceReports());
+  wrap.appendChild(reportSection==='income'?viewIncomeReports():reportSection==='attendance'?viewAttendanceReports():viewExpenseReports());
   return wrap;
 }
 function viewIncomeReports(){
@@ -1014,15 +1091,15 @@ function viewIncomeReports(){
   const dateInput=el('input',{type:'date',value:new Date().toISOString().slice(0,10)}); const dH=el('div'); dH.appendChild(el('label',{},'Date')); dH.appendChild(dateInput); dCard.appendChild(dH);
   const dOut=el('div'); dCard.appendChild(dOut); wrap.appendChild(dCard);
   function renderDaily(){ dOut.innerHTML=''; const date=dateInput.value; const tw=el('div',{class:'tablewrap'}); const tbl=el('table');
-    tbl.appendChild(el('tr',{},el('th',{},'Subject'),el('th',{},'Income'),el('th',{},"Teacher's Cut"),el('th',{},'Profit')));
+    tbl.appendChild(el('tr',{},el('th',{},'Subject'),el('th',{},'Class time'),el('th',{},'Income'),el('th',{},"Teacher's Cut"),el('th',{},'Profit')));
     let tI=0,tC=0,tP=0; let rows='';
     DB.classes.forEach(c=>{ const inc=DB.income.filter(e=>e.classId===c.id&&e.date===date).reduce((s,e)=>s+Number(e.amount),0); if(!inc) return; const cut=inc*shareOf(c)/100; const profit=inc-cut;
-      tI+=inc;tC+=cut;tP+=profit; tbl.appendChild(el('tr',{},el('td',{},c.institute+': '+c.name),el('td',{},money(inc)),el('td',{},money(cut)),el('td',{},money(profit))));
-      rows+='<tr><td>'+c.institute+': '+c.name+'</td><td>'+money(inc)+'</td><td>'+money(cut)+'</td><td>'+money(profit)+'</td></tr>'; });
+      tI+=inc;tC+=cut;tP+=profit; tbl.appendChild(el('tr',{},el('td',{},c.institute+': '+c.name),el('td',{},classTime(c)||'—'),el('td',{},money(inc)),el('td',{},money(cut)),el('td',{},money(profit))));
+      rows+='<tr><td>'+c.institute+': '+c.name+'</td><td>'+(classTime(c)||'—')+'</td><td>'+money(inc)+'</td><td>'+money(cut)+'</td><td>'+money(profit)+'</td></tr>'; });
     const admToday=DB.admissions.filter(a=>a.date===date).reduce((s,a)=>s+Number(a.amount),0);
-    if(admToday){ tI+=admToday; tP+=admToday; tbl.appendChild(el('tr',{},el('td',{},'Admission Fees'),el('td',{},money(admToday)),el('td',{},money(0)),el('td',{},money(admToday))));
-      rows+='<tr><td>Admission Fees</td><td>'+money(admToday)+'</td><td>'+money(0)+'</td><td>'+money(admToday)+'</td></tr>'; }
-    tbl.appendChild(el('tr',{},el('td',{},el('b',{},'Total')),el('td',{},el('b',{},money(tI))),el('td',{},el('b',{},money(tC))),el('td',{},el('b',{},money(tP)))));
+    if(admToday){ tI+=admToday; tP+=admToday; tbl.appendChild(el('tr',{},el('td',{},'Admission Fees'),el('td',{},'—'),el('td',{},money(admToday)),el('td',{},money(0)),el('td',{},money(admToday))));
+      rows+='<tr><td>Admission Fees</td><td>—</td><td>'+money(admToday)+'</td><td>'+money(0)+'</td><td>'+money(admToday)+'</td></tr>'; }
+    tbl.appendChild(el('tr',{},el('td',{},el('b',{},'Total')),el('td',{},''),el('td',{},el('b',{},money(tI))),el('td',{},el('b',{},money(tC))),el('td',{},el('b',{},money(tP)))));
     tw.appendChild(tbl); dOut.appendChild(tw);
 
     dOut.appendChild(el('h2',{style:'font-size:13px;margin:14px 0 6px'},'Student Payments — '+date));
@@ -1047,7 +1124,7 @@ function viewIncomeReports(){
     dOut.appendChild(el('div',{class:'sigbox'},el('div',{},"Director's Signature"+(dirName?' — '+dirName:'')),el('div',{},'Date: '+date)));
 
     const sigHtml='<div style="margin-top:56px;display:flex;justify-content:space-between;gap:30px"><div style="border-top:1px solid #333;padding-top:6px;min-width:240px;font-size:12px">Director\'s Signature'+(dirName?'<br><b>'+dirName+'</b>':'')+'</div><div style="border-top:1px solid #333;padding-top:6px;min-width:170px;font-size:12px">Date: '+date+'</div></div>';
-    const body='<h1>Daily Report — '+date+'</h1><h2>Income by Subject</h2><table><tr><th>Subject</th><th>Income</th><th>Teacher\'s Cut</th><th>Profit</th></tr>'+rows+'<tr><td><b>Total</b></td><td><b>'+money(tI)+'</b></td><td><b>'+money(tC)+'</b></td><td><b>'+money(tP)+'</b></td></tr></table><h2>Student Payments</h2><table><tr><th>Student</th><th>Subject/Grade</th><th>Institute</th><th>For Month</th><th>Fee</th></tr>'+(detailRows||'<tr><td colspan="5">No student payments recorded for this date.</td></tr>')+'<tr><td colspan="4"><b>Total ('+lines.length+' payment'+(lines.length===1?'':'s')+')</b></td><td style="text-align:right"><b>'+money(payTotal)+'</b></td></tr></table>'+sigHtml;
+    const body='<h1>Daily Report — '+date+'</h1><h2>Income by Subject</h2><table><tr><th>Subject</th><th>Class time</th><th>Income</th><th>Teacher\'s Cut</th><th>Profit</th></tr>'+rows+'<tr><td><b>Total</b></td><td></td><td><b>'+money(tI)+'</b></td><td><b>'+money(tC)+'</b></td><td><b>'+money(tP)+'</b></td></tr></table><h2>Student Payments</h2><table><tr><th>Student</th><th>Subject/Grade</th><th>Institute</th><th>For Month</th><th>Fee</th></tr>'+(detailRows||'<tr><td colspan="5">No student payments recorded for this date.</td></tr>')+'<tr><td colspan="4"><b>Total ('+lines.length+' payment'+(lines.length===1?'':'s')+')</b></td><td style="text-align:right"><b>'+money(payTotal)+'</b></td></tr></table>'+sigHtml;
     const btnRow=el('div',{class:'row',style:'margin-top:10px'});
     btnRow.appendChild(el('button',{class:'btn secondary',onclick:()=>exportReport('daily-report-'+date, body, 'jpg')},'Download as JPEG'));
     btnRow.appendChild(el('button',{class:'btn secondary',onclick:()=>exportReport('daily-report-'+date, body, 'pdf')},'Download as PDF'));
@@ -1061,15 +1138,15 @@ function viewIncomeReports(){
   function renderMonthly(){ mOut.innerHTML=''; const mp=monthInput.value;
     mOut.appendChild(el('h2',{style:'font-size:13px;margin:0 0 6px'},'Month: '+mp));
     const tw1=el('div',{class:'tablewrap'}); const tbl1=el('table');
-    tbl1.appendChild(el('tr',{},el('th',{},'Subject'),el('th',{},'Income'),el('th',{},"Teacher's Cut"),el('th',{},'Profit')));
+    tbl1.appendChild(el('tr',{},el('th',{},'Subject'),el('th',{},'Class time'),el('th',{},'Income'),el('th',{},"Teacher's Cut"),el('th',{},'Profit')));
     let tI=0,tC=0,tP=0; const earnByTeacher={};
     DB.classes.forEach(c=>{ const inc=DB.income.filter(e=>e.classId===c.id&&e.date.startsWith(mp)).reduce((s,e)=>s+Number(e.amount),0); const cut=inc*shareOf(c)/100; const profit=inc-cut;
       if(c.teacherId) earnByTeacher[c.teacherId]=(earnByTeacher[c.teacherId]||0)+cut;
       if(!inc) return; tI+=inc;tC+=cut;tP+=profit;
-      tbl1.appendChild(el('tr',{},el('td',{},c.institute+': '+c.name),el('td',{},money(inc)),el('td',{},money(cut)),el('td',{},money(profit)))); });
+      tbl1.appendChild(el('tr',{},el('td',{},c.institute+': '+c.name),el('td',{},classTime(c)||'—'),el('td',{},money(inc)),el('td',{},money(cut)),el('td',{},money(profit)))); });
     const admM=DB.admissions.filter(a=>a.date.startsWith(mp)).reduce((s,a)=>s+Number(a.amount),0);
-    if(admM){ tI+=admM; tP+=admM; tbl1.appendChild(el('tr',{},el('td',{},'Admission Fees'),el('td',{},money(admM)),el('td',{},money(0)),el('td',{},money(admM)))); }
-    tbl1.appendChild(el('tr',{},el('td',{},el('b',{},'Total')),el('td',{},el('b',{},money(tI))),el('td',{},el('b',{},money(tC))),el('td',{},el('b',{},money(tP)))));
+    if(admM){ tI+=admM; tP+=admM; tbl1.appendChild(el('tr',{},el('td',{},'Admission Fees'),el('td',{},'—'),el('td',{},money(admM)),el('td',{},money(0)),el('td',{},money(admM)))); }
+    tbl1.appendChild(el('tr',{},el('td',{},el('b',{},'Total')),el('td',{},''),el('td',{},el('b',{},money(tI))),el('td',{},el('b',{},money(tC))),el('td',{},el('b',{},money(tP)))));
     tw1.appendChild(tbl1); mOut.appendChild(tw1);
     mOut.appendChild(el('h2',{style:'font-size:13px;margin:14px 0 6px'},"Each Teacher's Earnings — Month: "+mp));
     const tw2=el('div',{class:'tablewrap'}); const tbl2=el('table');
@@ -1082,8 +1159,8 @@ function viewIncomeReports(){
         const classRows=DB.classes.filter(c=>c.teacherId===t.id).map(c=>{ const inc=DB.income.filter(e=>e.classId===c.id&&e.date.startsWith(mp)).reduce((s,e)=>s+Number(e.amount),0); return {c,inc,cut:inc*shareOf(c)/100}; });
         let body='<h1>Salary Slip — '+t.firstName+' '+(t.lastName||'')+' ('+t.no+')</h1><h2>Month: '+mp+'</h2>';
         classRows.forEach(r=>{
-          body+='<h2>'+r.c.institute+': '+r.c.name+' — Income '+money(r.inc)+', Share '+shareOf(r.c)+'%, Earning '+money(r.cut)+'</h2>';
-          const payers=DB.income.filter(e=>e.classId===r.c.id&&e.date.startsWith(mp));
+          body+='<h2>'+r.c.institute+': '+r.c.name+(classTime(r.c)?' ('+classTime(r.c)+')':'')+' — Income '+money(r.inc)+', Share '+shareOf(r.c)+'%, Earning '+money(r.cut)+'</h2>';
+          const payers=DB.income.filter(e=>e.classId===r.c.id&&e.date.startsWith(mp)&&Number(e.amount)>0&&e.source!=='Skipped');
           if(payers.length){ body+='<table><tr><th>Student</th><th>Source</th><th>Amount</th><th>Date</th></tr>';
             payers.forEach(p=>{ const st=DB.students.find(x=>x.id===p.studentId); body+='<tr><td>'+(st?st.no+' - '+st.firstName+' '+(st.lastName||''):'(removed)')+'</td><td>'+p.source+'</td><td>'+money(p.amount)+'</td><td>'+p.date+'</td></tr>'; });
             body+='</table>'; }
@@ -1127,14 +1204,14 @@ function viewIncomeReports(){
       gOut.appendChild(el('h2',{style:'font-size:13px;margin:14px 0 6px'},name)); html+='<h2>'+name+'</h2>';
       if(!rows.length){ gOut.appendChild(el('p',{class:'small'},'No payments recorded for this teacher in '+monthLabel(mp)+'.')); html+='<p>No payments recorded in this month.</p>'; return; }
       const tw=el('div',{class:'tablewrap'}); const tbl=el('table');
-      tbl.appendChild(el('tr',{},el('th',{},'Grade / Subject'),el('th',{},'Institute'),el('th',{},'Students paid'),el('th',{},'Payments'),el('th',{},'Collected'),el('th',{},'Share %'),el('th',{},'Teacher earning')));
-      let t1='<table><tr><th>Grade / Subject</th><th>Institute</th><th>Students paid</th><th>Payments</th><th>Collected</th><th>Share %</th><th>Teacher earning</th></tr>';
+      tbl.appendChild(el('tr',{},el('th',{},'Grade / Subject'),el('th',{},'Institute'),el('th',{},'Class time'),el('th',{},'Students paid'),el('th',{},'Payments'),el('th',{},'Collected'),el('th',{},'Share %'),el('th',{},'Teacher earning')));
+      let t1='<table><tr><th>Grade / Subject</th><th>Institute</th><th>Class time</th><th>Students paid</th><th>Payments</th><th>Collected</th><th>Share %</th><th>Teacher earning</th></tr>';
       let tTotal=0,tEarn=0;
       rows.forEach(r=>{ tTotal+=r.total; tEarn+=r.earn;
-        tbl.appendChild(el('tr',{},el('td',{},r.c.name),el('td',{},r.c.institute),el('td',{},String(r.paid)),el('td',{},String(r.pays.length)),el('td',{},money(r.total)),el('td',{},r.share+'%'),el('td',{},money(r.earn))));
-        t1+='<tr><td>'+r.c.name+'</td><td>'+r.c.institute+'</td><td>'+r.paid+'</td><td>'+r.pays.length+'</td><td style="text-align:right">'+money(r.total)+'</td><td>'+r.share+'%</td><td style="text-align:right">'+money(r.earn)+'</td></tr>'; });
-      tbl.appendChild(el('tr',{},el('td',{colspan:'4'},el('b',{},'Total — '+t.firstName+' '+(t.lastName||''))),el('td',{},el('b',{},money(tTotal))),el('td',{},''),el('td',{},el('b',{},money(tEarn)))));
-      t1+='<tr><td colspan="4"><b>Total</b></td><td style="text-align:right"><b>'+money(tTotal)+'</b></td><td></td><td style="text-align:right"><b>'+money(tEarn)+'</b></td></tr></table>';
+        tbl.appendChild(el('tr',{},el('td',{},r.c.name),el('td',{},r.c.institute),el('td',{},classTime(r.c)||'—'),el('td',{},String(r.paid)),el('td',{},String(r.pays.length)),el('td',{},money(r.total)),el('td',{},r.share+'%'),el('td',{},money(r.earn))));
+        t1+='<tr><td>'+r.c.name+'</td><td>'+r.c.institute+'</td><td>'+(classTime(r.c)||'—')+'</td><td>'+r.paid+'</td><td>'+r.pays.length+'</td><td style="text-align:right">'+money(r.total)+'</td><td>'+r.share+'%</td><td style="text-align:right">'+money(r.earn)+'</td></tr>'; });
+      tbl.appendChild(el('tr',{},el('td',{colspan:'5'},el('b',{},'Total — '+t.firstName+' '+(t.lastName||''))),el('td',{},el('b',{},money(tTotal))),el('td',{},''),el('td',{},el('b',{},money(tEarn)))));
+      t1+='<tr><td colspan="5"><b>Total</b></td><td style="text-align:right"><b>'+money(tTotal)+'</b></td><td></td><td style="text-align:right"><b>'+money(tEarn)+'</b></td></tr></table>';
       tw.appendChild(tbl); gOut.appendChild(tw); html+=t1; grandCollected+=tTotal; grandEarn+=tEarn;
       if(withStudents) rows.forEach(r=>{
         gOut.appendChild(el('p',{class:'small',style:'margin:10px 0 4px'},r.c.institute+': '+r.c.name+' — student payments'));
@@ -1158,13 +1235,88 @@ function viewIncomeReports(){
   return wrap;
 }
 
+/* ---------- EXPENSE REPORTS (daily + monthly): general expenses AND teacher salary payments ---------- */
+const EXP_CATS=['From Daily Income',"From Owner's Hand",'Staff Salary','Teacher salary — From Daily Income',"Teacher salary — From Owner's Hand","Teacher salary — For Owner's Children"];
+function expenseEntries(prefix){
+  const out=[];
+  DB.exp.filter(e=>(e.date||'').startsWith(prefix)&&Number(e.amount)>0).forEach(e=>out.push({date:e.date,type:'Expense',category:e.category,detail:e.description||'—',amount:Number(e.amount)}));
+  DB.tpay.filter(t=>(t.date||'').startsWith(prefix)&&Number(t.amount)>0).forEach(t=>{ const te=DB.teachers.find(x=>x.id===t.teacherId); const c=DB.classes.find(x=>x.id===t.classId);
+    out.push({date:t.date,type:'Teacher salary',category:'Teacher salary — '+t.category,detail:(te?te.firstName+' '+(te.lastName||''):'(removed)')+(c?' · '+c.name:'')+(t.note?' · '+t.note:''),amount:Number(t.amount)}); });
+  out.sort((a,b)=>a.date.localeCompare(b.date)||a.type.localeCompare(b.type)||a.category.localeCompare(b.category));
+  return out;
+}
+function expenseReportCard(mode){
+  const daily=mode==='daily';
+  const card=el('div',{class:'card'}); card.appendChild(el('h2',{},daily?'Daily Expense Report':'Monthly Expense Report'));
+  const input=el('input',{type:daily?'date':'month',value:daily?new Date().toISOString().slice(0,10):new Date().toISOString().slice(0,7)});
+  const hd=el('div'); hd.appendChild(el('label',{},daily?'Date':'Month')); hd.appendChild(input); card.appendChild(hd);
+  const out=el('div'); card.appendChild(out);
+  function draw(){
+    out.innerHTML=''; const period=input.value; const rows=expenseEntries(period);
+    const filters=[
+      {label:'Type',key:'type',options:[{value:'Expense',label:'General expenses'},{value:'Teacher salary',label:'Teacher salaries'}],test:(r,v)=>r.type===v},
+      {label:'Category',key:'cat',options:EXP_CATS.map(x=>({value:x,label:x})),test:(r,v)=>r.category===v}];
+    const host=el('div'); out.appendChild(host); const sumHost=el('div'); out.appendChild(sumHost);
+    let currentBody='', currentName='expense-'+mode+'-'+period;
+    const btnRow=el('div',{class:'row',style:'margin-top:10px'});
+    btnRow.appendChild(el('button',{class:'btn secondary',onclick:()=>exportReport(currentName,currentBody,'jpg')},'Download as JPEG'));
+    btnRow.appendChild(el('button',{class:'btn secondary',onclick:()=>exportReport(currentName,currentBody,'pdf')},'Download as PDF'));
+    out.appendChild(btnRow);
+    const titleText=daily?'Daily Expense Report — '+period:'Monthly Expense Report — '+monthLabel(period);
+    function update(list){
+      const st=TABLE_STATES['exp-'+mode]||{q:'',f:{}}; const desc=[]; let catLabel='';
+      filters.forEach(f=>{ const v=st.f[f.key]; if(v){ const o=f.options.find(x=>x.value===v); desc.push(f.label+': '+(o?o.label:v)); if(f.key==='cat') catLabel=v; } });
+      if(st.q) desc.push('Search: "'+st.q+'"');
+      const total=list.reduce((s,r)=>s+r.amount,0);
+      const byCat={}; list.forEach(r=>{ const o=byCat[r.category]||(byCat[r.category]={n:0,amt:0}); o.n++; o.amt+=r.amount; });
+      sumHost.innerHTML='';
+      sumHost.appendChild(el('p',{class:'small',style:'margin:10px 0 0'},desc.length?'Filters applied: '+desc.join(' · ')+' — the totals and downloads match these filters.':'Includes general expenses and teacher salary payments. Use the filters above to narrow it; the totals and downloads follow them.'));
+      let html='<h1>'+titleText+'</h1>'+(desc.length?'<p>Filters: '+desc.join(' · ')+'</p>':'');
+      if(!daily){
+        const byDay={}; list.forEach(r=>{ const o=byDay[r.date]||(byDay[r.date]={e:0,t:0}); if(r.type==='Expense') o.e+=r.amount; else o.t+=r.amount; });
+        const tw=el('div',{class:'tablewrap',style:'margin-top:8px'}); const tb=el('table');
+        tb.appendChild(el('tr',{},el('th',{},'Day-by-day'),el('th',{},'General expenses'),el('th',{},'Teacher salaries'),el('th',{},'Total')));
+        let dh='<h2>Day by day</h2><table><tr><th>Date</th><th>General expenses</th><th>Teacher salaries</th><th>Total</th></tr>'; let se=0,stt=0;
+        Object.keys(byDay).sort().forEach(d=>{ const o=byDay[d]; se+=o.e; stt+=o.t; tb.appendChild(el('tr',{},el('td',{},d),el('td',{},money(o.e)),el('td',{},money(o.t)),el('td',{},money(o.e+o.t)))); dh+='<tr><td>'+d+'</td><td style="text-align:right">'+money(o.e)+'</td><td style="text-align:right">'+money(o.t)+'</td><td style="text-align:right">'+money(o.e+o.t)+'</td></tr>'; });
+        tb.appendChild(el('tr',{},el('td',{},el('b',{},'TOTAL')),el('td',{},el('b',{},money(se))),el('td',{},el('b',{},money(stt))),el('td',{},el('b',{},money(se+stt)))));
+        dh+='<tr><td><b>TOTAL</b></td><td style="text-align:right"><b>'+money(se)+'</b></td><td style="text-align:right"><b>'+money(stt)+'</b></td><td style="text-align:right"><b>'+money(se+stt)+'</b></td></tr></table>';
+        tw.appendChild(tb); sumHost.appendChild(tw); html+=dh;
+      }
+      const tw2=el('div',{class:'tablewrap',style:'margin-top:8px'}); const tb2=el('table');
+      tb2.appendChild(el('tr',{},el('th',{},'Summary by category'),el('th',{},'Entries'),el('th',{},'Amount')));
+      let ch='<h2>Summary by category</h2><table><tr><th>Category</th><th>Entries</th><th>Amount</th></tr>';
+      Object.keys(byCat).sort().forEach(k=>{ tb2.appendChild(el('tr',{},el('td',{},k),el('td',{},String(byCat[k].n)),el('td',{},money(byCat[k].amt)))); ch+='<tr><td>'+k+'</td><td>'+byCat[k].n+'</td><td style="text-align:right">'+money(byCat[k].amt)+'</td></tr>'; });
+      tb2.appendChild(el('tr',{},el('td',{},el('b',{},'TOTAL EXPENSES')),el('td',{},el('b',{},String(list.length))),el('td',{},el('b',{},money(total)))));
+      ch+='<tr><td><b>TOTAL EXPENSES</b></td><td><b>'+list.length+'</b></td><td style="text-align:right"><b>'+money(total)+'</b></td></tr></table>';
+      tw2.appendChild(tb2); sumHost.appendChild(tw2); html+=ch;
+      let ih='<h2>Itemised</h2><table><tr><th>Date</th><th>Type</th><th>Category</th><th>Details</th><th>Amount</th></tr>';
+      list.forEach(r=>{ ih+='<tr><td>'+r.date+'</td><td>'+r.type+'</td><td>'+r.category+'</td><td>'+r.detail+'</td><td style="text-align:right">'+money(r.amount)+'</td></tr>'; });
+      if(!list.length) ih+='<tr><td colspan="5">No expenses match these filters.</td></tr>';
+      ih+='<tr><td colspan="4"><b>TOTAL</b></td><td style="text-align:right"><b>'+money(total)+'</b></td></tr></table>';
+      currentBody=html+ih; currentName='expense-'+mode+'-'+period+(catLabel?'-'+catLabel.replace(/[^A-Za-z0-9]+/g,'-').replace(/^-|-$/g,''):'');
+    }
+    renderFilterSortTable(host,{
+      id:'exp-'+mode, rows, emptyText:daily?'No expenses were recorded on this date.':'No expenses were recorded in this month.',
+      headers:[{label:'Date',key:'date',sortable:true},{label:'Type',key:'type',sortable:true},{label:'Category',key:'category',sortable:true},{label:'Details',key:'detail',sortable:true},{label:'Amount',key:'amount',sortable:true}],
+      filters, onChange:update,
+      searchText:r=>[r.date,r.type,r.category,r.detail].join(' '),
+      sortVal:(r,k)=>k==='amount'?r.amount:(r[k]||''),
+      cellsFor:r=>[r.date,r.type,r.category,r.detail,money(r.amount)]
+    });
+  }
+  input.onchange=draw; draw();
+  return card;
+}
+function viewExpenseReports(){ const wrap=el('div'); wrap.appendChild(expenseReportCard('daily')); wrap.appendChild(expenseReportCard('monthly')); return wrap; }
+
 /* ---------- ATTENDANCE REPORTS (daily + monthly) ---------- */
 const capWord=s=>s?s.charAt(0).toUpperCase()+s.slice(1):'';
-const STUDENT_REP={inst:'',cls:'',stu:'',mode:'daily',month:'',year:''};
+const STUDENT_REP={inst:'',teacher:'',cls:'',stu:'',mode:'daily',month:'',year:''};
 function viewAttendanceReports(){
   const wrap=el('div');
   const roleOpts=[{value:'student',label:'Students'},{value:'teacher',label:'Teachers'},{value:'staff',label:'Staff'}];
   const classOpts=DB.classes.map(c=>({value:c.id,label:c.institute+': '+c.name}));
+  const teacherOpts=DB.teachers.filter(t=>DB.classes.some(c=>c.teacherId===t.id)).sort((a,b)=>(a.firstName||'').localeCompare(b.firstName||'')).map(t=>({value:t.id,label:t.firstName+' '+(t.lastName||'')}));
 
   /* daily */
   const dCard=el('div',{class:'card'}); dCard.appendChild(el('h2',{},'Daily Attendance Report'));
@@ -1173,9 +1325,9 @@ function viewAttendanceReports(){
   function renderDaily(){
     dOut.innerHTML=''; const date=dateInput.value;
     const rows=DB.attendance.filter(a=>a.date===date).map(a=>{ const c=DB.classes.find(x=>x.id===a.classId);
-      return {name:personName(a.personType,a.personId), type:a.personType, role:capWord(a.personType), classId:a.classId||'', cls:c?c.institute+': '+c.name:'General (staff)', status:a.status}; });
+      return {name:personName(a.personType,a.personId), type:a.personType, role:capWord(a.personType), classId:a.classId||'', cls:c?c.institute+': '+c.name:'General (staff)', time:classTime(c), teacherId:c?c.teacherId:'', status:a.status}; });
     rows.sort((a,b)=>a.cls.localeCompare(b.cls)||a.role.localeCompare(b.role)||a.name.localeCompare(b.name));
-    const filters=[{label:'Role',key:'role',options:roleOpts,test:(r,v)=>r.type===v},{label:'Subject / Class',key:'cls',options:classOpts,test:(r,v)=>r.classId===v},{label:'Status',key:'st',options:[{value:'present',label:'Present'},{value:'absent',label:'Absent'}],test:(r,v)=>r.status===v}];
+    const filters=[{label:'Role',key:'role',options:roleOpts,test:(r,v)=>r.type===v},{label:'Teacher',key:'teacher',options:teacherOpts,test:(r,v)=>r.teacherId===v},{label:'Subject / Class',key:'cls',options:classOpts,test:(r,v)=>r.classId===v},{label:'Status',key:'st',options:[{value:'present',label:'Present'},{value:'absent',label:'Absent'}],test:(r,v)=>r.status===v}];
     const host=el('div'); dOut.appendChild(host);
     const sumHost=el('div'); dOut.appendChild(sumHost);
     let currentBody='', currentName='attendance-daily-'+date;
@@ -1199,18 +1351,18 @@ function viewAttendanceReports(){
       sumTbl.appendChild(el('tr',{},el('td',{},el('b',{},'TOTAL ('+list.length+' marked)')),el('td',{},el('b',{},String(present))),el('td',{},el('b',{},String(absent)))));
       sumHtml+='<tr><td><b>TOTAL ('+list.length+' marked)</b></td><td><b>'+present+'</b></td><td><b>'+absent+'</b></td></tr></table>';
       sumTw.appendChild(sumTbl); sumHost.appendChild(sumTw);
-      let body='<h1>Daily Attendance Report — '+date+'</h1>'+(desc.length?'<p>Filters: '+desc.join(' · ')+'</p>':'')+'<table><tr><th>Subject / Class</th><th>Role</th><th>Name</th><th>Status</th></tr>';
-      list.forEach(r=>{ body+='<tr><td>'+r.cls+'</td><td>'+r.role+'</td><td>'+r.name+'</td><td>'+capWord(r.status)+'</td></tr>'; });
-      if(!list.length) body+='<tr><td colspan="4">No attendance records match these filters.</td></tr>';
+      let body='<h1>Daily Attendance Report — '+date+'</h1>'+(desc.length?'<p>Filters: '+desc.join(' · ')+'</p>':'')+'<table><tr><th>Subject / Class</th><th>Class time</th><th>Role</th><th>Name</th><th>Status</th></tr>';
+      list.forEach(r=>{ body+=trHtml([r.cls,r.time||'—',r.role,r.name,capWord(r.status)], r.status==='absent'); });
+      if(!list.length) body+='<tr><td colspan="5">No attendance records match these filters.</td></tr>';
       currentBody=body+'</table>'+sumHtml;
       currentName='attendance-daily-'+date+(clsLabel?'-'+clsLabel.replace(/[^A-Za-z0-9]+/g,'-').replace(/^-|-$/g,''):'');
     }
     renderFilterSortTable(host,{
       id:'att-daily', rows, emptyText:'No attendance was marked on this date.',
-      headers:[{label:'Subject / Class',key:'cls',sortable:true},{label:'Role',key:'role',sortable:true},{label:'Name',key:'name',sortable:true},{label:'Status',key:'status',sortable:true}],
-      filters, onChange:update,
-      searchText:r=>[r.name,r.role,r.cls,r.status].join(' '),
-      cellsFor:r=>[r.cls,r.role,r.name,el('span',{class:'pill'},r.status)]
+      headers:[{label:'Subject / Class',key:'cls',sortable:true},{label:'Class time',key:'time',sortable:false},{label:'Role',key:'role',sortable:true},{label:'Name',key:'name',sortable:true},{label:'Status',key:'status',sortable:true}],
+      filters, onChange:update, rowClass:r=>r.status==='absent'?'absent-row':'',
+      searchText:r=>[r.name,r.role,r.cls,r.time,r.status].join(' '),
+      cellsFor:r=>[r.cls,r.time||'—',r.role,r.name,el('span',{class:'pill'},r.status)]
     });
   }
   dateInput.onchange=renderDaily; renderDaily();
@@ -1227,10 +1379,10 @@ function viewAttendanceReports(){
       const o=map[key]||(map[key]={type:a.personType,id:a.personId,classId:a.classId||'',present:0,absent:0});
       if(a.status==='present') o.present++; else if(a.status==='absent') o.absent++; });
     const rows=Object.values(map).map(o=>{ const total=o.present+o.absent; const c=DB.classes.find(x=>x.id===o.classId);
-      return {name:personName(o.type,o.id), type:o.type, role:capWord(o.type), classId:o.classId, cls:c?c.institute+': '+c.name:'General (staff)', present:o.present, absent:o.absent, total, pct: total?Math.round(o.present*100/total):0}; });
+      return {name:personName(o.type,o.id), type:o.type, role:capWord(o.type), classId:o.classId, cls:c?c.institute+': '+c.name:'General (staff)', time:classTime(c), teacherId:c?c.teacherId:'', present:o.present, absent:o.absent, total, pct: total?Math.round(o.present*100/total):0}; });
     rows.sort((a,b)=>a.cls.localeCompare(b.cls)||a.role.localeCompare(b.role)||a.name.localeCompare(b.name));
     const daysMarked=new Set(recs.map(a=>a.date)).size;
-    const filters=[{label:'Role',key:'role',options:roleOpts,test:(r,v)=>r.type===v},{label:'Subject / Class',key:'cls',options:classOpts,test:(r,v)=>r.classId===v}];
+    const filters=[{label:'Role',key:'role',options:roleOpts,test:(r,v)=>r.type===v},{label:'Teacher',key:'teacher',options:teacherOpts,test:(r,v)=>r.teacherId===v},{label:'Subject / Class',key:'cls',options:classOpts,test:(r,v)=>r.classId===v}];
     const infoEl=el('p',{class:'small'},''); mOut.appendChild(infoEl);
     const host=el('div'); mOut.appendChild(host);
     const sumHost=el('div'); mOut.appendChild(sumHost);
@@ -1240,6 +1392,7 @@ function viewAttendanceReports(){
     btnRow.appendChild(el('button',{class:'btn secondary',onclick:()=>exportReport(currentName, currentBody, 'pdf')},'Download as PDF'));
     mOut.appendChild(btnRow);
     const pctPill=pct=>el('span',{class:'pill '+(pct>=85?'pill-ok':pct>=60?'pill-warn':'pill-bad')},pct+'%');
+    const absCell=n=>{ if(!n) return String(n); const s=el('span',{},String(n)); s.style.cssText='color:var(--danger);font-weight:700'; return s; };
     function update(list){
       const st=TABLE_STATES['att-monthly']||{q:'',f:{}}; const desc=[]; let clsLabel='';
       filters.forEach(f=>{ const v=st.f[f.key]; if(v){ const o=f.options.find(x=>x.value===v); desc.push(f.label+': '+(o?o.label:v)); if(f.key==='cls'&&o) clsLabel=o.label; } });
@@ -1250,20 +1403,20 @@ function viewAttendanceReports(){
       sTb.appendChild(el('tr',{},el('th',{},'Totals for the rows shown'),el('th',{},'Present'),el('th',{},'Absent'),el('th',{},'Total'),el('th',{},'Attendance %')));
       sTb.appendChild(el('tr',{},el('td',{},el('b',{},list.length+' row'+(list.length===1?'':'s'))),el('td',{},el('b',{},String(P))),el('td',{},el('b',{},String(A))),el('td',{},el('b',{},String(tot))),el('td',{},el('b',{},pct+'%'))));
       sTw.appendChild(sTb); sumHost.appendChild(sTw);
-      let body='<h1>Monthly Attendance Report — '+monthLabel(mp)+'</h1><p>Days with attendance marked this month: '+daysMarked+(desc.length?'<br>Filters: '+desc.join(' · '):'')+'</p><table><tr><th>Subject / Class</th><th>Role</th><th>Name</th><th>Present</th><th>Absent</th><th>Total</th><th>Attendance %</th></tr>';
-      list.forEach(r=>{ body+='<tr><td>'+r.cls+'</td><td>'+r.role+'</td><td>'+r.name+'</td><td>'+r.present+'</td><td>'+r.absent+'</td><td>'+r.total+'</td><td>'+r.pct+'%</td></tr>'; });
-      if(!list.length) body+='<tr><td colspan="7">No attendance records match these filters.</td></tr>';
-      body+='<tr><td colspan="3"><b>TOTAL ('+list.length+' row'+(list.length===1?'':'s')+')</b></td><td><b>'+P+'</b></td><td><b>'+A+'</b></td><td><b>'+tot+'</b></td><td><b>'+pct+'%</b></td></tr></table>';
+      let body='<h1>Monthly Attendance Report — '+monthLabel(mp)+'</h1><p>Days with attendance marked this month: '+daysMarked+(desc.length?'<br>Filters: '+desc.join(' · '):'')+'</p><table><tr><th>Subject / Class</th><th>Class time</th><th>Role</th><th>Name</th><th>Present</th><th>Absent</th><th>Total</th><th>Attendance %</th></tr>';
+      list.forEach(r=>{ body+='<tr><td>'+r.cls+'</td><td>'+(r.time||'—')+'</td><td>'+r.role+'</td><td>'+r.name+'</td><td>'+r.present+'</td><td'+(r.absent?' style="color:#b71c1c;font-weight:700"':'')+'>'+r.absent+'</td><td>'+r.total+'</td><td>'+r.pct+'%</td></tr>'; });
+      if(!list.length) body+='<tr><td colspan="8">No attendance records match these filters.</td></tr>';
+      body+='<tr><td colspan="4"><b>TOTAL ('+list.length+' row'+(list.length===1?'':'s')+')</b></td><td><b>'+P+'</b></td><td><b>'+A+'</b></td><td><b>'+tot+'</b></td><td><b>'+pct+'%</b></td></tr></table>';
       currentBody=body;
       currentName='attendance-monthly-'+mp+(clsLabel?'-'+clsLabel.replace(/[^A-Za-z0-9]+/g,'-').replace(/^-|-$/g,''):'');
     }
     renderFilterSortTable(host,{
       id:'att-monthly', rows, emptyText:'No attendance was marked in this month.',
-      headers:[{label:'Subject / Class',key:'cls',sortable:true},{label:'Role',key:'role',sortable:true},{label:'Name',key:'name',sortable:true},{label:'Present',key:'present',sortable:true},{label:'Absent',key:'absent',sortable:true},{label:'Total',key:'total',sortable:true},{label:'Attendance %',key:'pct',sortable:true}],
+      headers:[{label:'Subject / Class',key:'cls',sortable:true},{label:'Class time',key:'time',sortable:false},{label:'Role',key:'role',sortable:true},{label:'Name',key:'name',sortable:true},{label:'Present',key:'present',sortable:true},{label:'Absent',key:'absent',sortable:true},{label:'Total',key:'total',sortable:true},{label:'Attendance %',key:'pct',sortable:true}],
       filters, onChange:update,
       searchText:r=>[r.name,r.role,r.cls].join(' '),
       sortVal:(r,k)=> ['present','absent','total','pct'].includes(k)?r[k]:(r[k]||''),
-      cellsFor:r=>[r.cls,r.role,r.name,String(r.present),String(r.absent),String(r.total),pctPill(r.pct)]
+      cellsFor:r=>[r.cls,r.time||'—',r.role,r.name,String(r.present),absCell(r.absent),String(r.total),pctPill(r.pct)]
     });
   }
   monthInput.onchange=renderMonthly; renderMonthly();
@@ -1272,20 +1425,22 @@ function viewAttendanceReports(){
   const sCard=el('div',{class:'card'}); sCard.appendChild(el('h2',{},'Student Attendance Report — daily / monthly'));
   const sGrid=el('div',{class:'grid'});
   const sInst=el('select'); sInst.appendChild(el('option',{value:''},'All institutes')); INSTITUTES.forEach(i=>sInst.appendChild(el('option',{value:i},i)));
-  const sClass=el('select'); const sStudent=el('select');
+  const sTeacher=el('select'); const sClass=el('select'); const sStudent=el('select');
   const sMode=el('select'); [['daily','Daily — day by day'],['monthly','Monthly summary — whole year']].forEach(([v,l])=>sMode.appendChild(el('option',{value:v},l)));
   const sMonth=el('input',{type:'month',value:STUDENT_REP.month||new Date().toISOString().slice(0,7)});
   const sYear=el('input',{type:'number',min:'2000',max:'2100',value:STUDENT_REP.year||String(new Date().getFullYear())});
   const monthWrap=el('div'); monthWrap.appendChild(el('label',{},'Month')); monthWrap.appendChild(sMonth);
   const yearWrap=el('div'); yearWrap.appendChild(el('label',{},'Year')); yearWrap.appendChild(sYear);
-  [['Institute',sInst],['Subject / Class (optional)',sClass],['Student',sStudent],['Report type',sMode]].forEach(([l,i])=>{ const d=el('div'); d.appendChild(el('label',{},l)); d.appendChild(i); sGrid.appendChild(d); });
+  [['Institute',sInst],['Teacher',sTeacher],['Subject / Class (optional)',sClass],['Student',sStudent],['Report type',sMode]].forEach(([l,i])=>{ const d=el('div'); d.appendChild(el('label',{},l)); d.appendChild(i); sGrid.appendChild(d); });
   sGrid.appendChild(monthWrap); sGrid.appendChild(yearWrap); sCard.appendChild(sGrid);
   const sOut=el('div'); sCard.appendChild(sOut); wrap.appendChild(sCard);
   const keepOpt=(sel,val)=>{ sel.value=Array.from(sel.options).some(o=>o.value===val)?val:''; };
-  function syncRep(){ STUDENT_REP.inst=sInst.value; STUDENT_REP.cls=sClass.value; STUDENT_REP.stu=sStudent.value; STUDENT_REP.mode=sMode.value; STUDENT_REP.month=sMonth.value; STUDENT_REP.year=sYear.value; }
-  function fillClasses(){ sClass.innerHTML=''; sClass.appendChild(el('option',{value:''},'All subjects')); DB.classes.filter(c=>!sInst.value||c.institute===sInst.value).forEach(c=>sClass.appendChild(el('option',{value:c.id},(sInst.value?'':c.institute+': ')+c.name))); keepOpt(sClass,STUDENT_REP.cls); }
+  function syncRep(){ STUDENT_REP.inst=sInst.value; STUDENT_REP.teacher=sTeacher.value; STUDENT_REP.cls=sClass.value; STUDENT_REP.stu=sStudent.value; STUDENT_REP.mode=sMode.value; STUDENT_REP.month=sMonth.value; STUDENT_REP.year=sYear.value; }
+  function fillTeachers(){ sTeacher.innerHTML=''; sTeacher.appendChild(el('option',{value:''},'All teachers')); DB.teachers.filter(t=>DB.classes.some(c=>c.teacherId===t.id&&(!sInst.value||c.institute===sInst.value))).sort((a,b)=>(a.firstName||'').localeCompare(b.firstName||'')).forEach(t=>sTeacher.appendChild(el('option',{value:t.id},t.firstName+' '+(t.lastName||'')))); keepOpt(sTeacher,STUDENT_REP.teacher); }
+  const allowedClasses=()=>DB.classes.filter(c=>(!sInst.value||c.institute===sInst.value)&&(!sTeacher.value||c.teacherId===sTeacher.value));
+  function fillClasses(){ sClass.innerHTML=''; sClass.appendChild(el('option',{value:''},'All subjects')); allowedClasses().forEach(c=>sClass.appendChild(el('option',{value:c.id},(sInst.value?'':c.institute+': ')+c.name))); keepOpt(sClass,STUDENT_REP.cls); }
   function fillStudents(){ sStudent.innerHTML=''; sStudent.appendChild(el('option',{value:''},'— choose a student —'));
-    DB.students.filter(s=>{ const en=normalizeEnrollments(s); if(sClass.value) return en.some(e=>e.classId===sClass.value); if(sInst.value) return en.some(e=>{ const c=DB.classes.find(x=>x.id===e.classId); return c&&c.institute===sInst.value; }); return true; })
+    DB.students.filter(s=>{ const en=normalizeEnrollments(s); if(sClass.value) return en.some(e=>e.classId===sClass.value); if(sInst.value||sTeacher.value){ const ids=new Set(allowedClasses().map(c=>c.id)); return en.some(e=>ids.has(e.classId)); } return true; })
       .sort((a,b)=>(a.firstName||'').localeCompare(b.firstName||'')).forEach(s=>sStudent.appendChild(el('option',{value:s.id},s.no+' - '+s.firstName+' '+(s.lastName||''))));
     keepOpt(sStudent,STUDENT_REP.stu); }
   function renderStudent(){
@@ -1293,6 +1448,7 @@ function viewAttendanceReports(){
     const s=DB.students.find(x=>x.id===sStudent.value);
     if(!s){ sOut.appendChild(el('p',{class:'small'},'Choose a student to see their attendance.')); return; }
     const clsName=id=>{ const c=DB.classes.find(x=>x.id===id); return c?c.name:'—'; };
+    const clsTime=id=>classTime(DB.classes.find(x=>x.id===id))||'—';
     const pctOf=(pp,tt)=>tt?Math.round(pp*100/tt):0;
     const recsAll=DB.attendance.filter(a=>a.personType==='student'&&a.personId===s.id&&(!sClass.value||a.classId===sClass.value));
     const insts=[...new Set(normalizeEnrollments(s).map(e=>{ const c=DB.classes.find(x=>x.id===e.classId); return c?c.institute:''; }).filter(Boolean))].join(', ');
@@ -1301,26 +1457,26 @@ function viewAttendanceReports(){
     if(sMode.value==='daily'){
       const mp=sMonth.value; period=monthLabel(mp);
       const recs=recsAll.filter(a=>(a.date||'').startsWith(mp)).sort((a,b)=>a.date.localeCompare(b.date)||clsName(a.classId).localeCompare(clsName(b.classId)));
-      headers=['Date','Day','Subject / Class','Status'];
-      bodyRows=recs.map(a=>{ if(a.status==='present') present++; else if(a.status==='absent') absent++; return [a.date, new Date(a.date+'T00:00:00').toLocaleDateString('en',{weekday:'short'}), clsName(a.classId), a.status]; });
+      headers=['Date','Day','Subject / Class','Class time','Status'];
+      bodyRows=recs.map(a=>{ if(a.status==='present') present++; else if(a.status==='absent') absent++; return [a.date, new Date(a.date+'T00:00:00').toLocaleDateString('en',{weekday:'short'}), clsName(a.classId), clsTime(a.classId), a.status]; });
     } else {
       const yr=String(sYear.value||new Date().getFullYear()); period=yr;
       const map={};
       recsAll.filter(a=>(a.date||'').startsWith(yr+'-')).forEach(a=>{ const m=a.date.slice(0,7); const key=m+'|'+(a.classId||''); const o=map[key]||(map[key]={m,cid:a.classId||'',p:0,a:0}); if(a.status==='present'){ o.p++; present++; } else if(a.status==='absent'){ o.a++; absent++; } });
-      headers=['Month','Subject / Class','Present','Absent','Total','Attendance %'];
-      bodyRows=Object.values(map).sort((x,y)=>x.m.localeCompare(y.m)||clsName(x.cid).localeCompare(clsName(y.cid))).map(o=>[monthLabel(o.m), clsName(o.cid), String(o.p), String(o.a), String(o.p+o.a), pctOf(o.p,o.p+o.a)+'%']);
+      headers=['Month','Subject / Class','Class time','Present','Absent','Total','Attendance %'];
+      bodyRows=Object.values(map).sort((x,y)=>x.m.localeCompare(y.m)||clsName(x.cid).localeCompare(clsName(y.cid))).map(o=>[monthLabel(o.m), clsName(o.cid), clsTime(o.cid), String(o.p), String(o.a), String(o.p+o.a), pctOf(o.p,o.p+o.a)+'%']);
     }
     const total=present+absent;
     sOut.appendChild(el('p',{class:'small'},s.no+' — '+s.firstName+' '+(s.lastName||'')+(insts?'  ·  '+insts:'')+'  ·  '+subjLabel+'  ·  '+period));
     const tw=el('div',{class:'tablewrap'}); const tbl=el('table');
     const hr=el('tr'); headers.forEach(x=>hr.appendChild(el('th',{},x))); tbl.appendChild(hr);
     if(!bodyRows.length) tbl.appendChild(el('tr',{},el('td',{colspan:String(headers.length)},'No attendance was marked for this student in this period.')));
-    bodyRows.forEach(r=>{ const tr=el('tr'); r.forEach((c,i)=>tr.appendChild(el('td',{}, (sMode.value==='daily'&&i===3)?el('span',{class:'pill'},c):c))); tbl.appendChild(tr); });
+    bodyRows.forEach(r=>{ const tr=el('tr'); if(sMode.value==='daily'&&r[4]==='absent') tr.className='absent-row'; r.forEach((c,i)=>{ let cell=c; if(sMode.value==='daily'&&i===4) cell=el('span',{class:'pill'},c); else if(sMode.value==='monthly'&&i===4&&Number(c)>0){ cell=el('span',{},c); cell.style.cssText='color:var(--danger);font-weight:700'; } tr.appendChild(el('td',{},cell)); }); tbl.appendChild(tr); });
     tw.appendChild(tbl); sOut.appendChild(tw);
     const stats=el('div',{class:'statgrid',style:'margin-top:12px'}); stats.appendChild(stat(present,'Present')); stats.appendChild(stat(absent,'Absent')); stats.appendChild(stat(total,'Total marked')); stats.appendChild(stat(pctOf(present,total)+'%','Attendance')); sOut.appendChild(stats);
     if(sMode.value==='daily') sOut.appendChild(el('p',{class:'small'},'Only days on which attendance was marked are listed.'));
     let body='<h1>Student Attendance — '+s.firstName+' '+(s.lastName||'')+' ('+s.no+')</h1><p>'+(insts?insts+' &nbsp;·&nbsp; ':'')+subjLabel+' &nbsp;·&nbsp; '+period+'</p><table><tr>'+headers.map(x=>'<th>'+x+'</th>').join('')+'</tr>';
-    bodyRows.forEach(r=>{ body+='<tr>'+r.map((c,i)=>'<td>'+((sMode.value==='daily'&&i===3)?capWord(c):c)+'</td>').join('')+'</tr>'; });
+    bodyRows.forEach(r=>{ const isAbs=sMode.value==='daily'&&r[4]==='absent'; body+=trHtml(r.map((c,i)=>(sMode.value==='daily'&&i===4)?capWord(c):((sMode.value==='monthly'&&i===4&&Number(c)>0)?'<span style="color:#b71c1c;font-weight:700">'+c+'</span>':c)), isAbs); });
     if(!bodyRows.length) body+='<tr><td colspan="'+headers.length+'">No attendance was marked for this student in this period.</td></tr>';
     body+='</table><p><b>Present: '+present+' &nbsp; Absent: '+absent+' &nbsp; Total marked: '+total+' &nbsp; Attendance: '+pctOf(present,total)+'%</b></p>';
     const fname='attendance-student-'+s.no+'-'+period;
@@ -1329,11 +1485,12 @@ function viewAttendanceReports(){
     btnRow.appendChild(el('button',{class:'btn secondary',onclick:()=>exportReport(fname, body, 'pdf')},'Download as PDF'));
     sOut.appendChild(btnRow);
   }
-  sInst.onchange=()=>{ syncRep(); fillClasses(); syncRep(); fillStudents(); syncRep(); renderStudent(); };
+  sInst.onchange=()=>{ syncRep(); fillTeachers(); syncRep(); fillClasses(); syncRep(); fillStudents(); syncRep(); renderStudent(); };
+  sTeacher.onchange=()=>{ syncRep(); fillClasses(); syncRep(); fillStudents(); syncRep(); renderStudent(); };
   sClass.onchange=()=>{ syncRep(); fillStudents(); syncRep(); renderStudent(); };
   sStudent.onchange=()=>{ syncRep(); renderStudent(); };
   sMode.onchange=()=>{ syncRep(); renderStudent(); }; sMonth.onchange=sMode.onchange; sYear.onchange=sMode.onchange;
-  sInst.value=STUDENT_REP.inst; fillClasses(); fillStudents(); sMode.value=STUDENT_REP.mode; renderStudent();
+  sInst.value=STUDENT_REP.inst; fillTeachers(); fillClasses(); fillStudents(); sMode.value=STUDENT_REP.mode; renderStudent();
   return wrap;
 }
 
