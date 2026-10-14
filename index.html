@@ -136,7 +136,7 @@ onSnapshot(doc(fsdb,'settings','main'), snap=>{
 
 function genNo(prefix, arr){ let max=0; arr.forEach(x=>{ const m=(x.no||'').match(/(\d+)$/); if(m) max=Math.max(max,parseInt(m[1])); }); return prefix+String(max+1).padStart(4,'0'); }
 function age(dob){ if(!dob) return ''; const d=new Date(dob), n=new Date(); let a=n.getFullYear()-d.getFullYear(); const m=n.getMonth()-d.getMonth(); if(m<0||(m===0&&n.getDate()<d.getDate())) a--; return a; }
-function money(n){ return 'Rs. '+(Number(n)||0).toLocaleString(); }
+function money(n){ return 'Rs. '+(Math.round((Number(n)||0)*100)/100).toLocaleString(); }
 function notify(msg){ let t=document.getElementById('__toast'); if(!t){ t=el('div',{id:'__toast'}); t.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:8px;font-size:13px;z-index:200;max-width:85%;text-align:center;box-shadow:0 4px 14px rgba(0,0,0,.25);transition:opacity .25s;'; document.body.appendChild(t); } t.textContent=msg; t.style.opacity='1'; clearTimeout(t._timer); t._timer=setTimeout(()=>{ t.style.opacity='0'; },Math.max(2500,msg.length*70)); }
 function showSavedDialog(message, promise){
   const overlay=el('div'); overlay.style.cssText='position:fixed;inset:0;background:rgba(8,20,36,.55);display:flex;align-items:center;justify-content:center;z-index:300;padding:16px;';
@@ -174,6 +174,60 @@ const WEEKDAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 function fmtTime(t){ if(!t) return ''; const [hh,mm]=String(t).split(':').map(Number); if(isNaN(hh)) return ''; return (((hh+11)%12)+1)+':'+String(mm||0).padStart(2,'0')+' '+(hh>=12?'PM':'AM'); }
 function classTime(c){ if(!c) return ''; const d=(c.days||[]).slice().sort((a,b)=>WEEKDAYS.indexOf(a)-WEEKDAYS.indexOf(b)).join(', '); const t=c.startTime?(fmtTime(c.startTime)+(c.endTime?' – '+fmtTime(c.endTime):'')):''; return [d,t].filter(Boolean).join(' · '); }
 function trHtml(cells,red){ const st=red?' style="background:#fdecea;color:#b71c1c;font-weight:700"':''; return '<tr>'+cells.map(c=>'<td'+st+'>'+c+'</td>').join('')+'</tr>'; }
+const PAYABLE_UI={month:'',upTo:''};
+function tpayMonthOf(p){ return p.forMonth||(p.date||'').slice(0,7); }
+function monthEndDate(mp){ const [y,m]=mp.split('-').map(Number); return mp+'-'+String(new Date(y,m,0).getDate()).padStart(2,'0'); }
+function defaultUpTo(mp){ const today=new Date().toISOString().slice(0,10); return today.slice(0,7)===mp?today:monthEndDate(mp); }
+/* what a teacher has earned from student payments received 1st-of-month .. upTo, what was paid for that month, and the balance */
+function teacherPayable(t,mp,upTo){
+  const start=mp+'-01';
+  const rows=DB.classes.filter(c=>c.teacherId===t.id).map(c=>{
+    const pays=DB.income.filter(e=>e.classId===c.id&&Number(e.amount)>0&&e.source!=='Skipped'&&e.source!=='Fee adjustment'&&(e.date||'')>=start&&(e.date||'')<=upTo);
+    const collected=pays.reduce((s,e)=>s+Number(e.amount),0); const share=shareOf(c);
+    return {c,count:pays.length,collected,share,earn:collected*share/100};
+  }).filter(r=>r.collected>0);
+  const paidRecs=DB.tpay.filter(x=>x.teacherId===t.id&&tpayMonthOf(x)===mp).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const collected=rows.reduce((s,r)=>s+r.collected,0), earned=rows.reduce((s,r)=>s+r.earn,0), paid=paidRecs.reduce((s,x)=>s+Number(x.amount),0);
+  return {rows,paidRecs,collected,earned,paid,balance:earned-paid};
+}
+function payableStatus(r){ return r.balance>=1?'Pending':(r.balance<=-1?'Overpaid':'Paid'); }
+function teacherDueTotal(mp,upTo){ return DB.teachers.reduce((s,t)=>{ const r=teacherPayable(t,mp,upTo); return s+(r.balance>=1?r.balance:0); },0); }
+function overlayBox(maxW){ const overlay=el('div'); overlay.style.cssText='position:fixed;inset:0;background:rgba(8,20,36,.55);display:flex;align-items:center;justify-content:center;z-index:300;padding:16px;'; const box=el('div',{class:'card'}); box.style.cssText='max-width:'+(maxW||460)+'px;width:100%;margin:0;max-height:92vh;overflow:auto;'; overlay.appendChild(box); document.body.appendChild(overlay); return {overlay,box,close:()=>{ if(overlay.parentNode) overlay.parentNode.removeChild(overlay); }}; }
+function payableDetailsDialog(t,r,mp,upTo){
+  const {box,close}=overlayBox(560); const name=t.firstName+' '+(t.lastName||'');
+  box.appendChild(el('h2',{},name+' — '+monthLabel(mp)));
+  box.appendChild(el('p',{class:'small'},'Student payments received '+mp+'-01 to '+upTo+'.'));
+  const tw=el('div',{class:'tablewrap'}); const tb=el('table'); tb.appendChild(el('tr',{},el('th',{},'Grade / Subject'),el('th',{},'Payments'),el('th',{},'Collected'),el('th',{},'Share'),el('th',{},'Earned')));
+  r.rows.forEach(x=>tb.appendChild(el('tr',{},el('td',{},x.c.name+(classTime(x.c)?' ('+classTime(x.c)+')':'')),el('td',{},String(x.count)),el('td',{},money(x.collected)),el('td',{},x.share+'%'),el('td',{},money(x.earn)))));
+  tb.appendChild(el('tr',{},el('td',{colspan:'2'},el('b',{},'Total')),el('td',{},el('b',{},money(r.collected))),el('td',{},''),el('td',{},el('b',{},money(r.earned))))); tw.appendChild(tb); box.appendChild(tw);
+  box.appendChild(el('h2',{style:'margin-top:14px'},'Already paid for '+monthLabel(mp)));
+  const tw2=el('div',{class:'tablewrap'}); const tb2=el('table'); tb2.appendChild(el('tr',{},el('th',{},'Date paid'),el('th',{},'Paid from'),el('th',{},'Amount'),el('th',{},'Note')));
+  if(!r.paidRecs.length) tb2.appendChild(el('tr',{},el('td',{colspan:'4'},'Nothing paid yet.')));
+  r.paidRecs.forEach(x=>tb2.appendChild(el('tr',{},el('td',{},x.date),el('td',{},x.category),el('td',{},money(x.amount)),el('td',{},x.note||''))));
+  if(r.paidRecs.length) tb2.appendChild(el('tr',{},el('td',{colspan:'2'},el('b',{},'Total paid')),el('td',{},el('b',{},money(r.paid))),el('td',{},'')));
+  tw2.appendChild(tb2); box.appendChild(tw2);
+  box.appendChild(el('p',{style:'font-weight:700;margin-top:10px'},'Balance to pay: '+money(Math.max(r.balance,0))));
+  const row=el('div',{class:'row'}); row.style.cssText='justify-content:flex-end;margin-top:8px;'; row.appendChild(el('button',{class:'btn secondary',type:'button',onclick:close},'Close')); box.appendChild(row);
+}
+function payTeacherDialog(t,r,mp,upTo){
+  const {box,close}=overlayBox(440); const name=t.firstName+' '+(t.lastName||'');
+  box.appendChild(el('h2',{},'Mark salary as paid'));
+  const info=el('p',{class:'small'}); info.textContent=name+' — '+monthLabel(mp)+'. Earned to '+upTo+': '+money(r.earned)+' · already paid: '+money(r.paid)+' · balance: '+money(Math.max(r.balance,0))+'.'; box.appendChild(info);
+  const amt=el('input',{type:'number',min:'1',value:String(Math.max(Math.round(r.balance),0))});
+  const dt=el('input',{type:'date',value:new Date().toISOString().slice(0,10)});
+  const cat=el('select'); ["From Daily Income","From Owner's Hand","For Owner's Children"].forEach(c=>cat.appendChild(el('option',{value:c},c)));
+  const note=el('input',{type:'text',value:'Salary '+monthLabel(mp)+' (payments received up to '+upTo+')'});
+  [['Amount paid (Rs.)',amt],['Date paid',dt],['Paid from',cat],['Note',note]].forEach(([l,i])=>{ const d=el('div'); d.appendChild(el('label',{},l)); d.appendChild(i); box.appendChild(d); });
+  const row=el('div',{class:'row'}); row.style.cssText='justify-content:flex-end;margin-top:8px;';
+  row.appendChild(el('button',{class:'btn secondary',type:'button',onclick:close},'Cancel'));
+  row.appendChild(el('button',{class:'btn',type:'button',onclick:()=>{
+    const a=Number(amt.value); if(!(a>0)){ notify('Enter the amount paid.'); return; }
+    close(); const rec={id:uid(),teacherId:t.id,classId:null,category:cat.value,amount:String(a),date:dt.value,note:note.value,forMonth:mp};
+    DB.tpay.push(rec); const pr=save('tpay'); render();
+    showSavedDialog('Salary payment of '+money(a)+' to '+name+' for '+monthLabel(mp)+' recorded ('+cat.value+').', pr);
+  }},'Mark as paid'));
+  box.appendChild(row);
+}
 function recordLabel(kind,r){ return kind==='classes'?(r.institute+': '+r.name):((r.no?r.no+' — ':'')+r.firstName+' '+(r.lastName||'')); }
 /* everything that points at a record (so you can see what would be orphaned by deleting it) */
 function relatedSummary(kind,id){
@@ -422,7 +476,7 @@ function firstUnsettledMonthBefore(student,classId,target){
   return null;
 }
 /* colour-code status pills automatically */
-const PILL_MAP={paid:'ok',present:'ok',active:'ok',due:'bad',absent:'bad',inactive:'muted',partial:'warn',skipped:'muted',unmarked:'muted'};
+const PILL_MAP={paid:'ok',present:'ok',active:'ok',due:'bad',absent:'bad',inactive:'muted',partial:'warn',skipped:'muted',unmarked:'muted',pending:'warn',overpaid:'warn'};
 function decoratePills(root){ root.querySelectorAll('.pill:not([data-d])').forEach(p=>{ p.dataset.d='1'; const k=PILL_MAP[p.textContent.trim().toLowerCase()]; if(k) p.classList.add('pill-'+k); }); }
 new MutationObserver(()=>decoratePills(document.getElementById('app'))).observe(document.getElementById('app'),{childList:true,subtree:true});
 function personName(type,id){ const list= type==='student'?DB.students:type==='teacher'?DB.teachers:DB.staff; const p=list.find(x=>x.id===id); return p?(p.no?p.no+' - ':'')+p.firstName+' '+(p.lastName||''):'(removed)'; }
@@ -475,7 +529,8 @@ function viewDashboard(){
     stat(presentToday,'Present Today'),
     stat(money(incM+admM),'Income (Month)'),
     stat(money(expM+tpM),'Expenses (Month)'),
-    stat(money(incM+admM-expM-tpM),'Net (Month)')
+    stat(money(incM+admM-expM-tpM),'Net (Month)'),
+    stat(money(teacherDueTotal(mp,today)),'Teacher pay due (to date)')
   ));
   const bdays=upcomingBirthdays(14);
   if(bdays.length){
@@ -783,15 +838,65 @@ function viewTPay(){
   const classSel=el('select'); classSel.appendChild(el('option',{value:''},'— general —')); DB.classes.forEach(c=>classSel.appendChild(el('option',{value:c.id},c.name)));
   const catSel=el('select'); ["From Daily Income","From Owner's Hand","For Owner's Children"].forEach(c=>catSel.appendChild(el('option',{value:c},c)));
   const amtInput=el('input',{type:'number',placeholder:'Amount'}); const dateInput=el('input',{type:'date',value:new Date().toISOString().slice(0,10)}); const noteInput=el('input',{placeholder:'Note (optional)'});
-  [['Teacher',teacherSel],['Subject/Class',classSel],['Category',catSel],['Amount',amtInput],['Date',dateInput],['Note',noteInput]].forEach(([l,i])=>{ const h=el('div');h.appendChild(el('label',{},l));h.appendChild(i);grid.appendChild(h); });
+  const forMonthInput=el('input',{type:'month',value:new Date().toISOString().slice(0,7)});
+  [['Teacher',teacherSel],['Subject/Class',classSel],['Category',catSel],['Salary for month',forMonthInput],['Amount',amtInput],['Date paid',dateInput],['Note',noteInput]].forEach(([l,i])=>{ const h=el('div');h.appendChild(el('label',{},l));h.appendChild(i);grid.appendChild(h); });
   card.appendChild(grid);
   card.appendChild(el('p',{class:'small'},'Tip: a teacher earns '+SETTINGS.defaultShare+'% (default, editable per subject) of the income their subject brings in — see Reports for the calculated figure.'));
   card.appendChild(el('button',{class:'btn',onclick:()=>{ if(!teacherSel.value||!amtInput.value){notify('Select teacher and amount');return;}
-    const rec={teacherId:teacherSel.value,classId:classSel.value||null,category:catSel.value,amount:amtInput.value,date:dateInput.value,note:noteInput.value};
+    const rec={teacherId:teacherSel.value,classId:classSel.value||null,category:catSel.value,amount:amtInput.value,date:dateInput.value,note:noteInput.value,forMonth:forMonthInput.value};
     const wasEdit=!!editingId;
     if(editingId){ const i=DB.tpay.findIndex(x=>x.id===editingId); DB.tpay[i]=Object.assign(DB.tpay[i],rec); editingId=null; } else { rec.id=uid(); DB.tpay.push(rec); }
     const pr=save('tpay'); render(); const tch=DB.teachers.find(x=>x.id===rec.teacherId);
     showSavedDialog('Teacher payment of '+money(rec.amount)+(tch?' to '+tch.firstName+' '+(tch.lastName||''):'')+' '+(wasEdit?'updated':'recorded')+'.', pr); }},'Save Payment'));
+  /* ---- Teacher Payable (to date) ---- */
+  const payCard=el('div',{class:'card'}); payCard.appendChild(el('h2',{},'Teacher Payable — to date'));
+  payCard.appendChild(el('p',{class:'small'},'Each teacher earns their share of the student payments received from the 1st of the month up to the date you choose. This shows what is earned, what has already been paid for that month, and the balance still to pay. Use "Mark as paid" once you have paid.'));
+  const pGrid=el('div',{class:'grid'});
+  const pMonth=el('input',{type:'month',value:PAYABLE_UI.month||new Date().toISOString().slice(0,7)});
+  const pUpTo=el('input',{type:'date',value:PAYABLE_UI.upTo||defaultUpTo(pMonth.value)});
+  [['Salary month',pMonth],['Payments received up to',pUpTo]].forEach(([l,i])=>{ const d=el('div'); d.appendChild(el('label',{},l)); d.appendChild(i); pGrid.appendChild(d); });
+  payCard.appendChild(pGrid); const pOut=el('div'); payCard.appendChild(pOut); wrap.appendChild(payCard);
+  function drawPayable(){
+    const mp=pMonth.value, upTo=pUpTo.value; PAYABLE_UI.month=mp; PAYABLE_UI.upTo=upTo;
+    const rows=DB.teachers.filter(t=>DB.classes.some(c=>c.teacherId===t.id)).map(t=>Object.assign({t},teacherPayable(t,mp,upTo))).filter(r=>r.earned>0||r.paid>0).map(r=>Object.assign(r,{status:payableStatus(r)}));
+    const filters=[
+      {label:'Teacher',key:'teacher',options:rows.map(r=>({value:r.t.id,label:r.t.firstName+' '+(r.t.lastName||'')})),test:(r,v)=>r.t.id===v},
+      {label:'Status',key:'status',options:['Pending','Paid','Overpaid'].map(x=>({value:x,label:x})),test:(r,v)=>r.status===v}];
+    const host=el('div'); pOut.innerHTML=''; pOut.appendChild(host); const sumHost=el('div'); pOut.appendChild(sumHost);
+    let currentBody='';
+    const btnRow=el('div',{class:'row',style:'margin-top:10px'});
+    btnRow.appendChild(el('button',{class:'btn secondary',onclick:()=>exportReport('teacher-payable-'+mp,currentBody,'jpg')},'Download as JPEG'));
+    btnRow.appendChild(el('button',{class:'btn secondary',onclick:()=>exportReport('teacher-payable-'+mp,currentBody,'pdf')},'Download as PDF'));
+    pOut.appendChild(btnRow);
+    function update(list){
+      const st=TABLE_STATES['payable']||{q:'',f:{}}; const desc=[];
+      filters.forEach(f=>{ const v=st.f[f.key]; if(v){ const o=f.options.find(x=>x.value===v); desc.push(f.label+': '+(o?o.label:v)); } }); if(st.q) desc.push('Search: "'+st.q+'"');
+      const C=list.reduce((s,r)=>s+r.collected,0), E=list.reduce((s,r)=>s+r.earned,0), P=list.reduce((s,r)=>s+r.paid,0), B=list.reduce((s,r)=>s+(r.balance>=1?r.balance:0),0);
+      sumHost.innerHTML=''; const tw=el('div',{class:'tablewrap',style:'margin-top:8px'}); const tb=el('table');
+      tb.appendChild(el('tr',{},el('th',{},'Totals for the teachers shown'),el('th',{},'Collected'),el('th',{},'Earned'),el('th',{},'Paid so far'),el('th',{},'Balance to pay')));
+      tb.appendChild(el('tr',{},el('td',{},el('b',{},list.length+' teacher'+(list.length===1?'':'s'))),el('td',{},el('b',{},money(C))),el('td',{},el('b',{},money(E))),el('td',{},el('b',{},money(P))),el('td',{},el('b',{},money(B)))));
+      tw.appendChild(tb); sumHost.appendChild(tw);
+      let html='<h1>Teacher Payable — '+monthLabel(mp)+'</h1><p>Student payments received '+mp+'-01 to '+upTo+(desc.length?'<br>Filters: '+desc.join(' · '):'')+'</p><table><tr><th>Teacher</th><th>Collected</th><th>Earned</th><th>Paid so far</th><th>Balance to pay</th><th>Status</th></tr>';
+      list.forEach(r=>{ html+=trHtml([r.t.no+' - '+r.t.firstName+' '+(r.t.lastName||''),money(r.collected),money(r.earned),money(r.paid),money(Math.max(r.balance,0)),r.status],r.status==='Pending'); });
+      if(!list.length) html+='<tr><td colspan="6">No teachers match.</td></tr>';
+      html+='<tr><td><b>TOTAL</b></td><td><b>'+money(C)+'</b></td><td><b>'+money(E)+'</b></td><td><b>'+money(P)+'</b></td><td><b>'+money(B)+'</b></td><td></td></tr></table>';
+      currentBody=html;
+    }
+    renderFilterSortTable(host,{
+      id:'payable', rows, emptyText:'No student payments were received in this period, and nothing has been paid to teachers for this month.',
+      headers:[{label:'Teacher',key:'teacher',sortable:true},{label:'Collected',key:'collected',sortable:true},{label:'Earned (share)',key:'earned',sortable:true},{label:'Paid so far',key:'paid',sortable:true},{label:'Balance to pay',key:'balance',sortable:true},{label:'Status',key:'status',sortable:true},{label:'',key:null,sortable:false}],
+      filters, onChange:update,
+      searchText:r=>[r.t.no,r.t.firstName,r.t.lastName,r.status].join(' '),
+      sortVal:(r,k)=>{ if(k==='teacher') return r.t.firstName||''; if(['collected','earned','paid','balance'].includes(k)) return r[k]; return r.status; },
+      cellsFor:r=>{ const btns=el('div',{class:'row'});
+        btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>payableDetailsDialog(r.t,r,mp,upTo)},'Details'));
+        if(r.status==='Pending') btns.appendChild(el('button',{class:'btn small',onclick:()=>payTeacherDialog(r.t,r,mp,upTo)},'Mark as paid'));
+        const bal=el('b'); bal.textContent=money(Math.max(r.balance,0));
+        return [r.t.no+' - '+r.t.firstName+' '+(r.t.lastName||''), money(r.collected), money(r.earned), money(r.paid), bal, el('span',{class:'pill'},r.status), btns]; }
+    });
+  }
+  pMonth.onchange=()=>{ pUpTo.value=defaultUpTo(pMonth.value); drawPayable(); }; pUpTo.onchange=drawPayable; drawPayable();
+
   wrap.appendChild(card);
 
   const listCard=el('div',{class:'card'}); listCard.appendChild(el('h2',{},'Payment History'));
@@ -800,17 +905,18 @@ function viewTPay(){
     id:'tpay', filters:[
       {label:'Teacher',key:'t',options:DB.teachers.map(t=>({value:t.id,label:t.no+' - '+t.firstName+' '+(t.lastName||'')})),test:(p,v)=>p.teacherId===v},
       {label:'Category',key:'cat',options:["From Daily Income","From Owner's Hand","For Owner's Children"].map(x=>({value:x,label:x})),test:(p,v)=>p.category===v},
-      {label:'Month',key:'m',type:'month',test:(p,v)=>(p.date||'').startsWith(v)},
+      {label:'Salary month',key:'sm',type:'month',test:(p,v)=>tpayMonthOf(p)===v},
+      {label:'Date paid (month)',key:'m',type:'month',test:(p,v)=>(p.date||'').startsWith(v)},
       {label:'Problems',key:'prob',options:[{value:'orphan',label:'Missing teacher or subject'}],test:(p)=>!DB.teachers.some(t=>t.id===p.teacherId)||(!!p.classId&&!DB.classes.some(c=>c.id===p.classId))}],
-    headers:[{label:'Date',key:'date',sortable:true},{label:'Teacher',key:'teacher',sortable:true},{label:'Subject',key:'subject',sortable:true},{label:'Category',key:'category',sortable:true},{label:'Amount',key:'amount',sortable:true},{label:'',key:null,sortable:false}],
+    headers:[{label:'Date paid',key:'date',sortable:true},{label:'Salary month',key:'forMonth',sortable:true},{label:'Teacher',key:'teacher',sortable:true},{label:'Subject',key:'subject',sortable:true},{label:'Category',key:'category',sortable:true},{label:'Amount',key:'amount',sortable:true},{label:'',key:null,sortable:false}],
     rows: DB.tpay.slice().sort((a,b)=>b.date.localeCompare(a.date)),
     searchText: p=>{ const t=DB.teachers.find(x=>x.id===p.teacherId); const c=DB.classes.find(x=>x.id===p.classId); return [p.date,t?t.firstName+' '+(t.lastName||''):'',c?c.name:'',p.category,p.note].join(' '); },
     sortVal: (p,key)=>{ if(key==='teacher'){ const t=DB.teachers.find(x=>x.id===p.teacherId); return t?t.firstName:''; } if(key==='subject'){ const c=DB.classes.find(x=>x.id===p.classId); return c?c.name:''; } if(key==='amount') return Number(p.amount)||0; return p[key]||''; },
     cellsFor: p=>{ const t=DB.teachers.find(x=>x.id===p.teacherId); const c=DB.classes.find(x=>x.id===p.classId);
       const btns=el('div',{class:'row'});
-      btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('edit this payment record', ()=>{ teacherSel.value=p.teacherId; classSel.value=p.classId||''; catSel.value=p.category; amtInput.value=p.amount; dateInput.value=p.date; noteInput.value=p.note||''; editingId=p.id; window.scrollTo(0,0); }); }},'Edit'));
+      btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('edit this payment record', ()=>{ teacherSel.value=p.teacherId; classSel.value=p.classId||''; catSel.value=p.category; amtInput.value=p.amount; dateInput.value=p.date; noteInput.value=p.note||''; forMonthInput.value=tpayMonthOf(p); editingId=p.id; window.scrollTo(0,0); }); }},'Edit'));
       btns.appendChild(el('button',{class:'btn danger',onclick:()=>{ confirmAdmin('delete this payment record', ()=>{ DB.tpay=DB.tpay.filter(x=>x.id!==p.id); save('tpay'); render(); }); }},'Delete'));
-      return [p.date, t?t.firstName+' '+(t.lastName||''):'(removed)', c?c.name:'—', el('span',{class:'pill'},p.category), money(p.amount), btns];
+      return [p.date, tpayMonthOf(p), t?t.firstName+' '+(t.lastName||''):'(removed)', c?c.name:'—', el('span',{class:'pill'},p.category), money(p.amount), btns];
     }
   });
   listCard.appendChild(el('p',{class:'small'},'Total recorded: '+money(DB.tpay.reduce((s,p)=>s+Number(p.amount),0))));
@@ -1151,7 +1257,7 @@ function viewIncomeReports(){
     mOut.appendChild(el('h2',{style:'font-size:13px;margin:14px 0 6px'},"Each Teacher's Earnings — Month: "+mp));
     const tw2=el('div',{class:'tablewrap'}); const tbl2=el('table');
     tbl2.appendChild(el('tr',{},el('th',{},'Teacher'),el('th',{},'Calculated Earning'),el('th',{},'Actually Paid'),el('th',{},'')));
-    DB.teachers.forEach(t=>{ const earn=earnByTeacher[t.id]||0; const tpayRows=DB.tpay.filter(p=>p.teacherId===t.id&&p.date.startsWith(mp)); const paid=tpayRows.reduce((s,p)=>s+Number(p.amount),0);
+    DB.teachers.forEach(t=>{ const earn=earnByTeacher[t.id]||0; const tpayRows=DB.tpay.filter(p=>p.teacherId===t.id&&tpayMonthOf(p)===mp); const paid=tpayRows.reduce((s,p)=>s+Number(p.amount),0);
       if(!earn&&!paid) return;
       const tr=el('tr'); tr.appendChild(el('td',{},t.no+' - '+t.firstName+' '+(t.lastName||''))); tr.appendChild(el('td',{},money(earn))); tr.appendChild(el('td',{},money(paid)));
       const btns=el('div',{class:'row'});
