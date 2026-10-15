@@ -174,7 +174,7 @@ const WEEKDAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 function fmtTime(t){ if(!t) return ''; const [hh,mm]=String(t).split(':').map(Number); if(isNaN(hh)) return ''; return (((hh+11)%12)+1)+':'+String(mm||0).padStart(2,'0')+' '+(hh>=12?'PM':'AM'); }
 function classTime(c){ if(!c) return ''; const d=(c.days||[]).slice().sort((a,b)=>WEEKDAYS.indexOf(a)-WEEKDAYS.indexOf(b)).join(', '); const t=c.startTime?(fmtTime(c.startTime)+(c.endTime?' – '+fmtTime(c.endTime):'')):''; return [d,t].filter(Boolean).join(' · '); }
 function trHtml(cells,red){ const st=red?' style="background:#fdecea;color:#b71c1c;font-weight:700"':''; return '<tr>'+cells.map(c=>'<td'+st+'>'+c+'</td>').join('')+'</tr>'; }
-const PAYABLE_UI={month:'',upTo:'',mode:'month',day:'',detail:'summary'};
+const PAYABLE_UI={month:'',upTo:'',mode:'month',day:'',detail:'students'};
 function tpayMonthOf(p){ return p.forMonth||(p.date||'').slice(0,7); }
 function monthEndDate(mp){ const [y,m]=mp.split('-').map(Number); return mp+'-'+String(new Date(y,m,0).getDate()).padStart(2,'0'); }
 function defaultUpTo(mp){ const today=new Date().toISOString().slice(0,10); return today.slice(0,7)===mp?today:monthEndDate(mp); }
@@ -902,13 +902,13 @@ function viewTPay(){
     showSavedDialog('Teacher payment of '+money(rec.amount)+(tch?' to '+tch.firstName+' '+(tch.lastName||''):'')+' '+(wasEdit?'updated':'recorded')+'.', pr); }},'Save Payment'));
   /* ---- Teacher Payable (monthly to-date, or daily) ---- */
   const payCard=el('div',{class:'card'}); payCard.appendChild(el('h2',{},'Teacher Payable — to date / daily'));
-  payCard.appendChild(el('p',{class:'small'},'Monthly: each teacher earns their share of the student payments received from the 1st of the month up to the date you choose. Daily: the same for a single day — use this for teachers who are paid the day the payments are received (set "Pay frequency" to Daily on their profile). Then use "Mark as paid".'));
+  payCard.appendChild(el('p',{class:'small'},'Monthly: each teacher earns their share of the student payments received from the 1st of the month up to the date you choose. Daily: the same for a single day — use this for teachers who are paid the day the payments are received (set "Pay frequency" to Daily on their profile). Then use "Mark as paid". The JPEG/PDF contains exactly what is shown, including the student payments unless you set Detail to "Totals only".'));
   const pGrid=el('div',{class:'grid'});
   const pMode=el('select'); [['month','Monthly — 1st of month to a date'],['day','Daily — one day']].forEach(([v,l])=>pMode.appendChild(el('option',{value:v},l))); pMode.value=PAYABLE_UI.mode||'month';
   const pMonth=el('input',{type:'month',value:PAYABLE_UI.month||new Date().toISOString().slice(0,7)});
   const pUpTo=el('input',{type:'date',value:PAYABLE_UI.upTo||defaultUpTo(pMonth.value)});
   const pDay=el('input',{type:'date',value:PAYABLE_UI.day||new Date().toISOString().slice(0,10)});
-  const pDetail=el('select'); [['summary','Totals only'],['students','Include student payments']].forEach(([v,l])=>pDetail.appendChild(el('option',{value:v},l))); pDetail.value=PAYABLE_UI.detail||'summary';
+  const pDetail=el('select'); [['summary','Totals only'],['students','Include student payments']].forEach(([v,l])=>pDetail.appendChild(el('option',{value:v},l))); pDetail.value=PAYABLE_UI.detail||'students';
   const pw={};
   [['mode','View',pMode],['month','Salary month',pMonth],['upTo','Payments received up to',pUpTo],['day','Day',pDay],['detail','Detail',pDetail]].forEach(([k,l,i])=>{ const d=el('div'); d.appendChild(el('label',{},l)); d.appendChild(i); pGrid.appendChild(d); pw[k]=d; });
   payCard.appendChild(pGrid); const pOut=el('div'); payCard.appendChild(pOut); wrap.appendChild(payCard);
@@ -1367,7 +1367,7 @@ function viewIncomeReports(){
   const gMonth=el('input',{type:'month',value:new Date().toISOString().slice(0,7)});
   const gTeacher=el('select'); gTeacher.appendChild(el('option',{value:''},'All teachers'));
   DB.teachers.filter(t=>DB.classes.some(c=>c.teacherId===t.id)).sort((a,b)=>(a.firstName||'').localeCompare(b.firstName||'')).forEach(t=>gTeacher.appendChild(el('option',{value:t.id},t.no+' - '+t.firstName+' '+(t.lastName||''))));
-  const gDetail=el('select'); [['summary','Grade totals only'],['students','Include student names']].forEach(([v,l])=>gDetail.appendChild(el('option',{value:v},l)));
+  const gDetail=el('select'); [['summary','Grade totals only'],['students','Include student names']].forEach(([v,l])=>gDetail.appendChild(el('option',{value:v},l))); gDetail.value='students';
   [['Month',gMonth],['Teacher',gTeacher],['Detail',gDetail]].forEach(([l,i])=>{ const d=el('div'); d.appendChild(el('label',{},l)); d.appendChild(i); gGrid.appendChild(d); });
   gCard.appendChild(gGrid); const gOut=el('div'); gCard.appendChild(gOut); wrap.appendChild(gCard);
   function renderGrade(){
