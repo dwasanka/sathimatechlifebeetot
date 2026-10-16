@@ -440,7 +440,9 @@ function exportReport(filename, bodyHtml, format){
 function normalizeEnrollments(student){ if(student.enrollments) return student.enrollments; return (student.classIds||[]).map(id=>({classId:id,level:'',monthlyFee:'',dailyFee:''})); }
 function getEnrollment(student,classId){ return normalizeEnrollments(student).find(e=>e.classId===classId); }
 function isEnrolled(student,classId){ return normalizeEnrollments(student).some(e=>e.classId===classId); }
-function getFee(student,classId,source){ const en=getEnrollment(student,classId); const c=DB.classes.find(x=>x.id===classId); if(source==='Monthly Fee') return en&&en.monthlyFee!=='' && en.monthlyFee!=null ? Number(en.monthlyFee) : Number(c?c.monthlyFee:0)||0; if(source==='Daily Fee') return en&&en.dailyFee!=='' && en.dailyFee!=null ? Number(en.dailyFee) : Number(c?c.dailyFee:0)||0; return 0; }
+function isFreeEnrollment(student,classId){ if(student.paymentType==='Free Card') return true; const en=getEnrollment(student,classId); return !!(en&&en.free); }
+function effectivePayType(student,classId){ return isFreeEnrollment(student,classId)?'Free Card':(student.paymentType||'Monthly'); }
+function getFee(student,classId,source){ if((source==='Monthly Fee'||source==='Daily Fee')&&isFreeEnrollment(student,classId)) return 0; const en=getEnrollment(student,classId); const c=DB.classes.find(x=>x.id===classId); if(source==='Monthly Fee') return en&&en.monthlyFee!=='' && en.monthlyFee!=null ? Number(en.monthlyFee) : Number(c?c.monthlyFee:0)||0; if(source==='Daily Fee') return en&&en.dailyFee!=='' && en.dailyFee!=null ? Number(en.dailyFee) : Number(c?c.dailyFee:0)||0; return 0; }
 function daysUntilBirthday(dob){
   if(!dob) return null;
   const d=new Date(dob); if(isNaN(d)) return null;
@@ -679,7 +681,7 @@ function viewPerson(kind){
     card.appendChild(staffInstWrap);
   }
   if(kind==='students'){
-    card.appendChild(el('label',{},'Enrolled Subjects / Classes — pick from the dropdown, then set a custom fee if this student pays differently (e.g. by ICT level at TechLife)'));
+    card.appendChild(el('label',{},'Enrolled Subjects / Classes — pick from the dropdown, then set a custom fee if this student pays differently (e.g. by ICT level at TechLife), or tick "Free card for this subject"'));
     const enrollBar=el('div',{class:'filters'});
     const enInst=el('select'); enInst.appendChild(el('option',{value:''},'Institute: All')); INSTITUTES.forEach(i=>enInst.appendChild(el('option',{value:i},i)));
     const enTeacher=el('select');
@@ -716,11 +718,12 @@ function viewPerson(kind){
       const dailyOv=el('input',{type:'number',placeholder:'Daily fee (blank = default '+money(c.dailyFee)+')'});
       const h1=el('div');h1.appendChild(el('label',{},'Custom Monthly Fee'));h1.appendChild(monthlyOv);detail.appendChild(h1);
       const h2=el('div');h2.appendChild(el('label',{},'Custom Daily Fee'));h2.appendChild(dailyOv);detail.appendChild(h2);
+      const freeCb=el('input',{type:'checkbox'}); const h3=el('div'); h3.style.cssText='display:flex;align-items:center;gap:6px;grid-column:1/-1;font-size:12.5px;'; h3.appendChild(freeCb); h3.appendChild(document.createTextNode('Free card for this subject (no fee)')); detail.appendChild(h3);
       row.appendChild(detail);
-      function sync(){ enrollments = enrollments.filter(e=>e.classId!==c.id); if(cb.checked) enrollments.push({classId:c.id, level:levelSel?levelSel.value:'', monthlyFee:monthlyOv.value, dailyFee:dailyOv.value}); }
+      function sync(){ enrollments = enrollments.filter(e=>e.classId!==c.id); if(cb.checked) enrollments.push({classId:c.id, level:levelSel?levelSel.value:'', monthlyFee:monthlyOv.value, dailyFee:dailyOv.value, free:freeCb.checked}); }
       cb.onchange=()=>{ detail.style.display=cb.checked?'grid':'none'; sync(); applyEnrollFilter(); };
-      if(levelSel) levelSel.onchange=sync; monthlyOv.onchange=sync; dailyOv.onchange=sync;
-      row._refresh=(en)=>{ cb.checked=!!en; detail.style.display=en?'grid':'none'; if(en){ if(levelSel) levelSel.value=en.level||''; monthlyOv.value=en.monthlyFee||''; dailyOv.value=en.dailyFee||''; } else { if(levelSel) levelSel.value=''; monthlyOv.value=''; dailyOv.value=''; } };
+      if(levelSel) levelSel.onchange=sync; monthlyOv.onchange=sync; dailyOv.onchange=sync; freeCb.onchange=sync;
+      row._refresh=(en)=>{ cb.checked=!!en; detail.style.display=en?'grid':'none'; freeCb.checked=!!(en&&en.free); if(en){ if(levelSel) levelSel.value=en.level||''; monthlyOv.value=en.monthlyFee||''; dailyOv.value=en.dailyFee||''; } else { if(levelSel) levelSel.value=''; monthlyOv.value=''; dailyOv.value=''; } };
       row._classId=c.id; row._cb=cb; row._inst=c.institute; row._name=c.name; row._teacher=c.teacherId||'';
       enrollWrap.appendChild(row);
     });
@@ -762,6 +765,7 @@ function viewPerson(kind){
     {label:'Teacher',key:'teacher',options:teacherOpts,test:(p,v)=>normalizeEnrollments(p).some(e=>{ const c=DB.classes.find(x=>x.id===e.classId); return !!c&&c.teacherId===v; })},
     {label:'Subject / Grade',key:'cls',options:classOpts,test:(p,v)=>isEnrolled(p,v)},
     {label:'Payment',key:'pay',options:['Monthly','Daily','Free Card'].map(x=>({value:x,label:x})),test:(p,v)=>p.paymentType===v},
+    {label:'Free subjects',key:'freesub',options:[{value:'yes',label:'Has a free-card subject'}],test:(p)=>normalizeEnrollments(p).some(e=>e.free)},
     statusFilter];
   if(kind==='teachers') pFilters=[
     {label:'Class taught',key:'cls',options:classOpts,test:(p,v)=>{ const c=DB.classes.find(x=>x.id===v); return !!c&&c.teacherId===p.id; }},
@@ -789,7 +793,7 @@ function viewPerson(kind){
     cellsFor: p=>{
       const cells=[ p.photo?el('img',{class:'thumb',src:p.photo}):el('span',{},'—'), p.no||'', nameCell(p), String(age(p.dob)) ];
       if(kind==='teachers') cells.push(p.subject||'', p.nic||'', p.qualifications||'', p.payFrequency||'Monthly');
-      if(kind==='students'){ const names=normalizeEnrollments(p).map(e=>{const c=DB.classes.find(x=>x.id===e.classId); return c?(c.name+(e.level?' ('+e.level+')':'')):'';}).filter(Boolean).join(', ');
+      if(kind==='students'){ const names=normalizeEnrollments(p).map(e=>{const c=DB.classes.find(x=>x.id===e.classId); return c?(c.name+(e.level?' ('+e.level+')':'')+(e.free?' [Free]':'')):'';}).filter(Boolean).join(', ');
         cells.push(names, p.fatherName||'', p.motherName||'', p.skills||'', p.paymentType||''); }
       if(kind==='staff') cells.push((p.institutes||[]).join(', '), p.role||'', p.nic||'', p.paymentType||'');
       cells.push(relatedText(kind,p.id));
@@ -1149,8 +1153,10 @@ function viewIncome(){
   function updateNoteAndAmount(auto){
     const s=DB.students.find(x=>x.id===studentSel.value); const c=DB.classes.find(x=>x.id===classSel.value); const monthly=sourceSel.value==='Monthly Fee';
     forMonthWrap.style.display = monthly ? 'block' : 'none';
-    adjBtn.style.display = (monthly&&s&&c&&!editingId&&s.paymentType!=='Free Card') ? '' : 'none';
+    const freeSub=!!(s&&c&&isFreeEnrollment(s,c.id));
+    adjBtn.style.display = (monthly&&s&&c&&!editingId&&!freeSub) ? '' : 'none';
     if(s && s.paymentType==='Free Card'){ noteEl.textContent='This student is on a Free Card — no fee is normally expected.'; return; }
+    if(freeSub){ noteEl.textContent='This subject is a free card for this student — no fee is normally expected.'; return; }
     if(!(s&&c)){ noteEl.textContent=''; return; }
     if(monthly){
       const m=forMonthInput.value; const req=requiredFee(s,c.id,m); const adj=adjustmentFor(s,c.id,m);
@@ -1191,7 +1197,7 @@ function viewIncome(){
   function renderDue(){
     const mp=monthInput.value; INCOME_UI.trackerMonth=mp; const rows=[];
     DB.students.filter(s=>s.status!=='inactive'&&s.paymentType==='Monthly').forEach(s=>{
-      normalizeEnrollments(s).forEach(en=>{ const c=DB.classes.find(x=>x.id===en.classId); if(!c) return;
+      normalizeEnrollments(s).forEach(en=>{ const c=DB.classes.find(x=>x.id===en.classId); if(!c) return; if(isFreeEnrollment(s,c.id)) return;
         const adj=adjustmentFor(s,c.id,mp); const required=requiredFee(s,c.id,mp);
         const paidSum=DB.income.filter(e=>e.studentId===s.id&&e.classId===c.id&&e.source==='Monthly Fee'&&e.forMonth===mp).reduce((sum,e)=>sum+Number(e.amount),0);
         const skipped=DB.income.some(e=>e.studentId===s.id&&e.classId===c.id&&e.source==='Skipped'&&e.forMonth===mp);
@@ -1429,7 +1435,7 @@ function viewStudentReports(){
     STRENGTH_UI.detail=dSel.value; const withNames=dSel.value==='names'; out.innerHTML='';
     const rows=DB.classes.map(c=>{
       const t=DB.teachers.find(x=>x.id===c.teacherId); const enrolled=DB.students.filter(s=>isEnrolled(s,c.id)); const act=enrolled.filter(s=>s.status!=='inactive');
-      const by=ty=>act.filter(s=>(s.paymentType||'Monthly')===ty).length;
+      const by=ty=>act.filter(s=>effectivePayType(s,c.id)===ty).length;
       return {c,t,tname:t?t.firstName+' '+(t.lastName||''):'No teacher assigned',time:classTime(c),students:act,n:act.length,inactive:enrolled.length-act.length,monthly:by('Monthly'),daily:by('Daily'),free:by('Free Card')};
     }).sort((a,b)=>a.tname.localeCompare(b.tname)||a.c.institute.localeCompare(b.c.institute)||a.c.name.localeCompare(b.c.name));
     const filters=[
@@ -1446,18 +1452,18 @@ function viewStudentReports(){
       const st=TABLE_STATES['strength']||{q:'',f:{}}; const desc=[];
       filters.forEach(f=>{ const v=st.f[f.key]; if(v){ const o=f.options.find(x=>x.value===v); desc.push(f.label+': '+(o?o.label:v)); } }); if(st.q) desc.push('Search: "'+st.q+'"');
       const byT={}; const allUniq=new Map();
-      list.forEach(r=>{ const k=r.t?r.t.id:'none'; const o=byT[k]||(byT[k]={name:r.tname,subjects:0,enr:0,uniq:new Map()}); o.subjects++; o.enr+=r.n; r.students.forEach(s=>{ o.uniq.set(s.id,s); allUniq.set(s.id,s); }); });
-      const pt=m=>{ const a=[...m.values()]; const c=ty=>a.filter(s=>(s.paymentType||'Monthly')===ty).length; return {u:a.length,monthly:c('Monthly'),daily:c('Daily'),free:c('Free Card')}; };
+      list.forEach(r=>{ const k=r.t?r.t.id:'none'; const o=byT[k]||(byT[k]={name:r.tname,subjects:0,enr:0,monthly:0,daily:0,free:0,uniq:new Map()}); o.subjects++; o.enr+=r.n; o.monthly+=r.monthly; o.daily+=r.daily; o.free+=r.free; r.students.forEach(s=>{ o.uniq.set(s.id,s); allUniq.set(s.id,s); }); });
+      const pt=o=>({u:o.uniq.size,monthly:o.monthly,daily:o.daily,free:o.free});
       sumHost.innerHTML=''; const tw=el('div',{class:'tablewrap',style:'margin-top:12px'}); const tb=el('table');
       tb.appendChild(el('tr',{},el('th',{},'Teacher totals'),el('th',{},'Subjects'),el('th',{},'Enrolments'),el('th',{},'Unique students'),el('th',{},'Monthly'),el('th',{},'Daily'),el('th',{},'Free card')));
       let th='<h2>Teacher totals</h2><table><tr><th>Teacher</th><th>Subjects</th><th>Enrolments</th><th>Unique students</th><th>Monthly</th><th>Daily</th><th>Free card</th></tr>';
-      Object.keys(byT).sort((a,b)=>byT[a].name.localeCompare(byT[b].name)).forEach(k=>{ const o=byT[k]; const q=pt(o.uniq);
+      Object.keys(byT).sort((a,b)=>byT[a].name.localeCompare(byT[b].name)).forEach(k=>{ const o=byT[k]; const q=pt(o);
         tb.appendChild(el('tr',{},el('td',{},o.name),el('td',{},String(o.subjects)),el('td',{},String(o.enr)),el('td',{},String(q.u)),el('td',{},String(q.monthly)),el('td',{},String(q.daily)),el('td',{},String(q.free))));
         th+='<tr><td>'+o.name+'</td><td>'+o.subjects+'</td><td>'+o.enr+'</td><td>'+q.u+'</td><td>'+q.monthly+'</td><td>'+q.daily+'</td><td>'+q.free+'</td></tr>'; });
-      const enrAll=list.reduce((s,r)=>s+r.n,0); const qa=pt(allUniq);
+      const enrAll=list.reduce((s,r)=>s+r.n,0); const qa={u:allUniq.size,monthly:list.reduce((s,r)=>s+r.monthly,0),daily:list.reduce((s,r)=>s+r.daily,0),free:list.reduce((s,r)=>s+r.free,0)};
       tb.appendChild(el('tr',{},el('td',{},el('b',{},'ALL SHOWN')),el('td',{},el('b',{},String(list.length))),el('td',{},el('b',{},String(enrAll))),el('td',{},el('b',{},String(qa.u))),el('td',{},el('b',{},String(qa.monthly))),el('td',{},el('b',{},String(qa.daily))),el('td',{},el('b',{},String(qa.free)))));
-      th+='<tr><td><b>ALL SHOWN</b></td><td><b>'+list.length+'</b></td><td><b>'+enrAll+'</b></td><td><b>'+qa.u+'</b></td><td><b>'+qa.monthly+'</b></td><td><b>'+qa.daily+'</b></td><td><b>'+qa.free+'</b></td></tr></table>';
-      tw.appendChild(tb); sumHost.appendChild(tw);
+      th+='<tr><td><b>ALL SHOWN</b></td><td><b>'+list.length+'</b></td><td><b>'+enrAll+'</b></td><td><b>'+qa.u+'</b></td><td><b>'+qa.monthly+'</b></td><td><b>'+qa.daily+'</b></td><td><b>'+qa.free+'</b></td></tr></table><p>Monthly / Daily / Free card count subject enrolments.</p>';
+      tw.appendChild(tb); sumHost.appendChild(tw); sumHost.appendChild(el('p',{class:'small'},'Monthly / Daily / Free card count subject enrolments, so a student can be free in one subject and paying in another.'));
       let html='<h1>Student Strength — Teacher & Subject wise</h1><p>As of '+today+(desc.length?'<br>Filters: '+desc.join(' · '):'')+'</p><table><tr><th>Teacher</th><th>Subject / Grade</th><th>Institute</th><th>Class time</th><th>Students</th><th>Monthly</th><th>Daily</th><th>Free card</th></tr>';
       list.forEach(r=>{ html+='<tr><td>'+r.tname+'</td><td>'+r.c.name+'</td><td>'+r.c.institute+'</td><td>'+(r.time||'—')+'</td><td><b>'+r.n+'</b></td><td>'+r.monthly+'</td><td>'+r.daily+'</td><td>'+r.free+'</td></tr>'; });
       if(!list.length) html+='<tr><td colspan="8">No subjects match.</td></tr>';
@@ -1469,7 +1475,7 @@ function viewStudentReports(){
           namesHost.appendChild(el('h2',{style:'font-size:13px;margin:16px 0 6px'},title));
           const tw3=el('div',{class:'tablewrap'}); const tb3=el('table'); tb3.appendChild(el('tr',{},el('th',{},'No'),el('th',{},'Student'),el('th',{},'Payment'),el('th',{},'Joined')));
           let nh='<h2>'+title+'</h2><table><tr><th>No</th><th>Student</th><th>Payment</th><th>Joined</th></tr>';
-          r.students.slice().sort((a,b)=>(a.no||'').localeCompare(b.no||'')).forEach(s=>{ const nm=s.firstName+' '+(s.lastName||''); const pay=s.paymentType||'Monthly'; const jd=s.joinedDate||'—';
+          r.students.slice().sort((a,b)=>(a.no||'').localeCompare(b.no||'')).forEach(s=>{ const nm=s.firstName+' '+(s.lastName||''); const pay=effectivePayType(s,r.c.id); const jd=s.joinedDate||'—';
             tb3.appendChild(el('tr',{},el('td',{},s.no||''),el('td',{},nm),el('td',{},pay),el('td',{},jd))); nh+='<tr><td>'+(s.no||'')+'</td><td>'+nm+'</td><td>'+pay+'</td><td>'+jd+'</td></tr>'; });
           tw3.appendChild(tb3); namesHost.appendChild(tw3); html+=nh+'</table>'; });
       }
