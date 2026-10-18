@@ -69,7 +69,7 @@ tr:hover td{background:var(--row-hover);}
 .inactive-row{opacity:.5;}
 .filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;}
 .filters input,.filters select{margin:0;flex:1 1 150px;width:auto;min-width:130px;}
-.seg{display:inline-flex;border:1px solid var(--border);border-radius:999px;overflow:hidden;margin-bottom:14px;background:var(--card);}
+.seg{display:inline-flex;max-width:100%;overflow-x:auto;border:1px solid var(--border);border-radius:999px;margin-bottom:14px;background:var(--card);}
 .seg button{border:0;background:transparent;padding:8px 16px;color:var(--muted);cursor:pointer;font-size:13px;font-weight:600;}
 .seg button.on{background:var(--grad);color:#fff;}
 .sigbox{margin-top:26px;display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;}
@@ -1267,9 +1267,9 @@ let reportSection='income';
 function viewReports(){
   const wrap=el('div');
   const seg=el('div',{class:'seg'});
-  [['income','Income & Salary'],['attendance','Attendance'],['expenses','Expenses'],['students','Student Strength']].forEach(([id,label])=>{ const b=el('button',{onclick:()=>{ reportSection=id; render(); }},label); if(reportSection===id) b.className='on'; seg.appendChild(b); });
+  [['income','Income & Salary'],['fees','Fee Status'],['attendance','Attendance'],['expenses','Expenses'],['students','Student Strength']].forEach(([id,label])=>{ const b=el('button',{onclick:()=>{ reportSection=id; render(); }},label); if(reportSection===id) b.className='on'; seg.appendChild(b); });
   wrap.appendChild(seg);
-  wrap.appendChild(reportSection==='income'?viewIncomeReports():reportSection==='attendance'?viewAttendanceReports():reportSection==='expenses'?viewExpenseReports():viewStudentReports());
+  wrap.appendChild(reportSection==='income'?viewIncomeReports():reportSection==='attendance'?viewAttendanceReports():reportSection==='expenses'?viewExpenseReports():reportSection==='fees'?viewFeeReports():viewStudentReports());
   return wrap;
 }
 function viewIncomeReports(){
@@ -1420,6 +1420,78 @@ function viewIncomeReports(){
   }
   gMonth.onchange=renderGrade; gTeacher.onchange=renderGrade; gDetail.onchange=renderGrade; renderGrade();
   return wrap;
+}
+
+/* ---------- FEE STATUS BY SUBJECT: students x months grid, easy to share in student groups ---------- */
+const FEE_UI={inst:'',teacher:'',cls:'',from:'',to:'',mode:'paid'};
+const MONTH_NAMES=['January','February','March','April','May','June','July','August','September','October','November','December'];
+function monthName(ym){ return MONTH_NAMES[Number(ym.slice(5,7))-1]||ym; }
+function monthRange(from,to){ const out=[]; let m=from, guard=0; while(m<=to&&guard<36){ out.push(m); m=nextMonth(m); guard++; } return out; }
+/* paid | partial | none | free | skipped | na (before the student started paying for this subject) */
+function feeCellStatus(s,c,m){
+  if(isFreeEnrollment(s,c.id)) return 'free';
+  const recs=DB.income.filter(e=>e.studentId===s.id&&e.classId===c.id&&e.forMonth);
+  let base=s.joinedDate?String(s.joinedDate).slice(0,7):null;
+  if(!base){ const ms=recs.filter(e=>e.source==='Monthly Fee'||e.source==='Skipped'||e.source==='Fee adjustment').map(e=>e.forMonth).sort(); base=ms[0]||null; }
+  if(base&&m<base) return 'na';
+  if(recs.some(e=>e.source==='Skipped'&&e.forMonth===m)) return 'skipped';
+  const required=requiredFee(s,c.id,m); const paid=recs.filter(e=>e.source==='Monthly Fee'&&e.forMonth===m).reduce((a,e)=>a+Number(e.amount),0);
+  if(paid>0&&paid>=required) return 'paid'; if(paid>0) return 'partial'; return 'none';
+}
+function viewFeeReports(){
+  const wrap=el('div'); const card=el('div',{class:'card'}); card.appendChild(el('h2',{},'Fee Status by Subject — students × months'));
+  card.appendChild(el('p',{class:'small'},'One table per subject: each student and whether their monthly fee is paid for each month. Download it as a JPEG/PDF to share in the student group. Students who pay daily are not listed (they have no monthly fee).'));
+  const g=el('div',{class:'grid'}); const instSel=el('select'); instSel.appendChild(el('option',{value:''},'All institutes')); INSTITUTES.forEach(i=>instSel.appendChild(el('option',{value:i},i)));
+  const teacherSel=el('select'); const classSel=el('select');
+  const thisYear=new Date().toISOString().slice(0,4); const nowMonth=new Date().toISOString().slice(0,7);
+  const fromIn=el('input',{type:'month',value:FEE_UI.from||(thisYear+'-01')}); const toIn=el('input',{type:'month',value:FEE_UI.to||nowMonth});
+  const modeSel=el('select'); [['paid','Paid only — blank = not paid'],['detail','Detailed (Paid / Partial / Free / Skipped)']].forEach(([v,l])=>modeSel.appendChild(el('option',{value:v},l))); modeSel.value=FEE_UI.mode;
+  [['Institute',instSel],['Teacher',teacherSel],['Subject / Grade',classSel],['From month',fromIn],['To month',toIn],['Show',modeSel]].forEach(([l,i])=>{ const d=el('div'); d.appendChild(el('label',{},l)); d.appendChild(i); g.appendChild(d); });
+  card.appendChild(g); wrap.appendChild(card); const out=el('div'); wrap.appendChild(out);
+  const keep=(sel,v)=>{ sel.value=Array.from(sel.options).some(o=>o.value===v)?v:''; };
+  const sync=()=>{ FEE_UI.inst=instSel.value; FEE_UI.teacher=teacherSel.value; FEE_UI.cls=classSel.value; FEE_UI.from=fromIn.value; FEE_UI.to=toIn.value; FEE_UI.mode=modeSel.value; };
+  function fillTeachers(){ teacherSel.innerHTML=''; teacherSel.appendChild(el('option',{value:''},'All teachers')); DB.teachers.filter(t=>DB.classes.some(c=>c.teacherId===t.id&&(!instSel.value||c.institute===instSel.value))).sort((a,b)=>(a.firstName||'').localeCompare(b.firstName||'')).forEach(t=>teacherSel.appendChild(el('option',{value:t.id},t.firstName+' '+(t.lastName||'')))); keep(teacherSel,FEE_UI.teacher); }
+  const allowed=()=>DB.classes.filter(c=>(!instSel.value||c.institute===instSel.value)&&(!teacherSel.value||c.teacherId===teacherSel.value));
+  function fillClasses(){ classSel.innerHTML=''; classSel.appendChild(el('option',{value:''},'All subjects (one table each)')); allowed().forEach(c=>classSel.appendChild(el('option',{value:c.id},(instSel.value?'':c.institute+': ')+c.name))); keep(classSel,FEE_UI.cls); }
+  function draw(){
+    out.innerHTML=''; let from=fromIn.value, to=toIn.value; if(!from||!to){ out.appendChild(el('p',{class:'small'},'Choose the first and last month.')); return; } if(from>to){ const x=from; from=to; to=x; }
+    const months=monthRange(from,to); const mode=modeSel.value; const multiYear=months[0].slice(0,4)!==months[months.length-1].slice(0,4);
+    const head=m=>multiYear?monthName(m).slice(0,3)+' '+m.slice(0,4):monthName(m);
+    const period=monthName(months[0])+' '+months[0].slice(0,4)+(months.length>1?' – '+monthName(months[months.length-1])+' '+months[months.length-1].slice(0,4):'');
+    const classes=allowed().filter(c=>!classSel.value||c.id===classSel.value).sort((a,b)=>(a.institute+a.name).localeCompare(b.institute+b.name));
+    if(!classes.length){ out.appendChild(el('p',{class:'small'},'No subjects match.')); return; }
+    const LABEL={paid:'Paid',partial:'Partial',free:'Free',skipped:'Skipped',na:'—',none:''};
+    const SCREEN_COLOR={paid:'var(--ok-fg)',partial:'var(--warn-fg)',free:'var(--accent2)',skipped:'var(--muted)',na:'var(--muted)',none:''};
+    const HTML_COLOR={paid:'#0b7a5a',partial:'#b45309',free:'#6d28d9',skipped:'#6b7280',na:'#6b7280',none:'#111'};
+    const shown=(st)=> mode==='paid' ? (st==='paid'?'Paid':(st==='skipped'||st==='na')?'—':'') : LABEL[st];
+    classes.forEach(c=>{
+      const t=DB.teachers.find(x=>x.id===c.teacherId); const all=DB.students.filter(s=>s.status!=='inactive'&&isEnrolled(s,c.id)).sort((a,b)=>(a.firstName+' '+(a.lastName||'')).localeCompare(b.firstName+' '+(b.lastName||'')));
+      const dailyN=all.filter(s=>effectivePayType(s,c.id)==='Daily').length; let list=all.filter(s=>effectivePayType(s,c.id)!=='Daily');
+      const freeN=list.filter(s=>isFreeEnrollment(s,c.id)).length; if(mode==='paid') list=list.filter(s=>!isFreeEnrollment(s,c.id));
+      const title=c.name+' — Monthly fee payments'; const sub=[c.institute,t?'Teacher: '+(t.firstName+' '+(t.lastName||'')).trim():'',classTime(c),period].filter(Boolean).join(' · ');
+      const sec=el('div',{class:'card'}); sec.appendChild(el('h2',{},title)); sec.appendChild(el('p',{class:'small'},sub));
+      const tw=el('div',{class:'tablewrap'}); const tb=el('table'); const hr=el('tr'); hr.appendChild(el('th',{},'Name')); months.forEach(m=>hr.appendChild(el('th',{},head(m)))); tb.appendChild(hr);
+      let html='<h1>'+title+'</h1><p>'+sub+'</p><table><tr><th>Name</th>'+months.map(m=>'<th style="text-align:center">'+head(m)+'</th>').join('')+'</tr>';
+      list.forEach(s=>{ const nm=(s.firstName+' '+(s.lastName||'')).trim(); const tr=el('tr'); tr.appendChild(el('td',{},nm)); html+='<tr><td>'+nm+'</td>';
+        months.forEach(m=>{ const st=feeCellStatus(s,c,m); const txt=shown(st); const td=el('td',{},txt); td.style.textAlign='center'; if(txt&&txt!=='—'){ td.style.fontWeight='700'; td.style.color=SCREEN_COLOR[st]; } else if(txt==='—'){ td.style.color='var(--muted)'; } tr.appendChild(td);
+          html+='<td style="text-align:center;color:'+HTML_COLOR[st]+';'+((txt&&txt!=='—')?'font-weight:700':'')+'">'+txt+'</td>'; });
+        tb.appendChild(tr); html+='</tr>'; });
+      if(!list.length){ tb.appendChild(el('tr',{},el('td',{colspan:String(months.length+1)},'No students to list for this subject.'))); html+='<tr><td colspan="'+(months.length+1)+'">No students to list for this subject.</td></tr>'; }
+      html+='</table>'; tw.appendChild(tb); sec.appendChild(tw);
+      const legend=mode==='paid'?'Paid = fee paid · blank = not paid yet · — = nothing due':'Paid · Partial = part of the fee paid · Free = free card · Skipped = month waived · blank = not paid yet · — = before the student started';
+      sec.appendChild(el('p',{class:'small',style:'margin-top:8px'},legend)); html+='<p style="font-size:11px;color:#555">'+legend+'</p>';
+      const notes=[]; if(dailyN) notes.push(dailyN+' student'+(dailyN===1?'':'s')+' paying daily not listed'); if(mode==='paid'&&freeN) notes.push(freeN+' free-card student'+(freeN===1?'':'s')+' not listed (switch to Detailed to see them)');
+      if(notes.length) sec.appendChild(el('p',{class:'small'},'Not shown: '+notes.join(' · ')+'.'));
+      const fname='fee-status-'+c.name.replace(/[^A-Za-z0-9]+/g,'-').replace(/^-|-$/g,'')+'-'+months[0]+(months.length>1?'-to-'+months[months.length-1]:'');
+      const row=el('div',{class:'row',style:'margin-top:8px'});
+      row.appendChild(el('button',{class:'btn secondary',onclick:()=>exportReport(fname,html,'jpg')},'Download as JPEG')); row.appendChild(el('button',{class:'btn secondary',onclick:()=>exportReport(fname,html,'pdf')},'Download as PDF'));
+      sec.appendChild(row); out.appendChild(sec);
+    });
+  }
+  instSel.value=FEE_UI.inst; fillTeachers(); fillClasses(); sync();
+  instSel.onchange=()=>{ sync(); fillTeachers(); sync(); fillClasses(); sync(); draw(); }; teacherSel.onchange=()=>{ sync(); fillClasses(); sync(); draw(); };
+  classSel.onchange=()=>{ sync(); draw(); }; fromIn.onchange=()=>{ sync(); draw(); }; toIn.onchange=()=>{ sync(); draw(); }; modeSel.onchange=()=>{ sync(); draw(); };
+  draw(); return wrap;
 }
 
 /* ---------- STUDENT STRENGTH REPORT: teacher & subject wise ---------- */
