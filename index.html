@@ -183,12 +183,12 @@ function teacherPayable(t,mp,upTo){
   const start=mp+'-01';
   const rows=DB.classes.filter(c=>c.teacherId===t.id).map(c=>{
     const pays=DB.income.filter(e=>e.classId===c.id&&Number(e.amount)>0&&e.source!=='Skipped'&&e.source!=='Fee adjustment'&&(e.date||'')>=start&&(e.date||'')<=upTo);
-    const collected=pays.reduce((s,e)=>s+Number(e.amount),0); const share=shareOf(c);
-    return {c,pays,count:pays.length,collected,share,earn:collected*share/100};
-  }).filter(r=>r.collected>0);
+    const covered=pays.filter(isCovered).reduce((s,e)=>s+Number(e.amount),0); const collected=pays.filter(e=>!isCovered(e)).reduce((s,e)=>s+Number(e.amount),0); const share=shareOf(c);
+    return {c,pays,count:pays.length,collected,covered,share,earn:(collected+covered)*share/100};
+  }).filter(r=>r.collected>0||r.covered>0);
   const paidRecs=DB.tpay.filter(x=>x.teacherId===t.id&&tpayMonthOf(x)===mp).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-  const collected=rows.reduce((s,r)=>s+r.collected,0), earned=rows.reduce((s,r)=>s+r.earn,0), paid=paidRecs.reduce((s,x)=>s+Number(x.amount),0);
-  return {rows,paidRecs,collected,earned,paid,balance:earned-paid};
+  const collected=rows.reduce((s,r)=>s+r.collected,0), covered=rows.reduce((s,r)=>s+r.covered,0), earned=rows.reduce((s,r)=>s+r.earn,0), paid=paidRecs.reduce((s,x)=>s+Number(x.amount),0);
+  return {rows,paidRecs,collected,covered,earned,paid,balance:earned-paid};
 }
 function payableStatus(r){ return r.balance>=1?'Pending':(r.balance<=-1?'Overpaid':'Paid'); }
 function teacherDueTotal(mp,upTo){ return DB.teachers.reduce((s,t)=>{ const r=teacherPayable(t,mp,upTo); return s+(r.balance>=1?r.balance:0); },0); }
@@ -196,13 +196,13 @@ function overlayBox(maxW){ const overlay=el('div'); overlay.style.cssText='posit
 function teacherPayableDay(t,day){
   const rows=DB.classes.filter(c=>c.teacherId===t.id).map(c=>{
     const pays=DB.income.filter(e=>e.classId===c.id&&Number(e.amount)>0&&e.source!=='Skipped'&&e.source!=='Fee adjustment'&&e.date===day);
-    const collected=pays.reduce((s,e)=>s+Number(e.amount),0); const share=shareOf(c);
-    return {c,pays,count:pays.length,collected,share,earn:collected*share/100};
-  }).filter(r=>r.collected>0);
+    const covered=pays.filter(isCovered).reduce((s,e)=>s+Number(e.amount),0); const collected=pays.filter(e=>!isCovered(e)).reduce((s,e)=>s+Number(e.amount),0); const share=shareOf(c);
+    return {c,pays,count:pays.length,collected,covered,share,earn:(collected+covered)*share/100};
+  }).filter(r=>r.collected>0||r.covered>0);
   const daily=(t.payFrequency==='Daily');
   const paidRecs=DB.tpay.filter(x=>x.teacherId===t.id&&(x.forDate===day||(daily&&!x.forDate&&x.date===day))).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-  const collected=rows.reduce((s,r)=>s+r.collected,0), earned=rows.reduce((s,r)=>s+r.earn,0), paid=paidRecs.reduce((s,x)=>s+Number(x.amount),0);
-  return {rows,paidRecs,collected,earned,paid,balance:earned-paid};
+  const collected=rows.reduce((s,r)=>s+r.collected,0), covered=rows.reduce((s,r)=>s+r.covered,0), earned=rows.reduce((s,r)=>s+r.earn,0), paid=paidRecs.reduce((s,x)=>s+Number(x.amount),0);
+  return {rows,paidRecs,collected,covered,earned,paid,balance:earned-paid};
 }
 /* every student payment behind a teacher's earnings: who paid, for which grade, when, how much, and the teacher's share of it */
 function studentPaymentLines(r){
@@ -215,9 +215,9 @@ function payableDetailsDialog(t,r,ctx){
   const {box,close}=overlayBox(560); const name=t.firstName+' '+(t.lastName||'');
   box.appendChild(el('h2',{},name+' — '+ctx.label));
   box.appendChild(el('p',{class:'small'},ctx.range+'.'));
-  const tw=el('div',{class:'tablewrap'}); const tb=el('table'); tb.appendChild(el('tr',{},el('th',{},'Grade / Subject'),el('th',{},'Payments'),el('th',{},'Collected'),el('th',{},'Share'),el('th',{},'Earned')));
-  r.rows.forEach(x=>tb.appendChild(el('tr',{},el('td',{},x.c.name+(classTime(x.c)?' ('+classTime(x.c)+')':'')),el('td',{},String(x.count)),el('td',{},money(x.collected)),el('td',{},x.share+'%'),el('td',{},money(x.earn)))));
-  tb.appendChild(el('tr',{},el('td',{colspan:'2'},el('b',{},'Total')),el('td',{},el('b',{},money(r.collected))),el('td',{},''),el('td',{},el('b',{},money(r.earned))))); tw.appendChild(tb); box.appendChild(tw);
+  const tw=el('div',{class:'tablewrap'}); const tb=el('table'); tb.appendChild(el('tr',{},el('th',{},'Grade / Subject'),el('th',{},'Payments'),el('th',{},'Collected'),el('th',{},'Covered by institute'),el('th',{},'Share'),el('th',{},'Earned')));
+  r.rows.forEach(x=>tb.appendChild(el('tr',{},el('td',{},x.c.name+(classTime(x.c)?' ('+classTime(x.c)+')':'')),el('td',{},String(x.count)),el('td',{},money(x.collected)),el('td',{},money(x.covered)),el('td',{},x.share+'%'),el('td',{},money(x.earn)))));
+  tb.appendChild(el('tr',{},el('td',{colspan:'2'},el('b',{},'Total')),el('td',{},el('b',{},money(r.collected))),el('td',{},el('b',{},money(r.covered))),el('td',{},''),el('td',{},el('b',{},money(r.earned))))); tw.appendChild(tb); box.appendChild(tw);
   box.appendChild(el('h2',{style:'margin-top:14px'},'Student payments'));
   const lines=studentPaymentLines(r); const twS=el('div',{class:'tablewrap'}); const tbS=el('table');
   tbS.appendChild(el('tr',{},el('th',{},'Grade'),el('th',{},'Student'),el('th',{},'Date received'),el('th',{},'Type / month'),el('th',{},'Amount'),el('th',{},'Teacher share')));
@@ -514,14 +514,14 @@ function renderFilterSortTable(container, opts){
 function nextMonth(ym){ let [y,m]=ym.split('-').map(Number); m++; if(m>12){ m=1; y++; } return y+'-'+String(m).padStart(2,'0'); }
 function monthLabel(ym){ const [y,m]=ym.split('-').map(Number); return new Date(y,m-1,1).toLocaleString('en',{month:'long',year:'numeric'}); }
 function firstUnsettledMonthBefore(student,classId,target){
-  const recs=DB.income.filter(e=>e.studentId===student.id&&e.classId===classId&&(e.source==='Monthly Fee'||e.source==='Skipped'||e.source==='Fee adjustment')&&e.forMonth);
+  const recs=DB.income.filter(e=>e.studentId===student.id&&e.classId===classId&&(e.source==='Monthly Fee'||e.source==='Skipped'||e.source==='Fee adjustment'||isCovered(e))&&e.forMonth);
   if(!recs.length) return null;
   const earliest=recs.map(e=>e.forMonth).sort()[0];
   if(earliest>=target) return null;
   let m=earliest;
   while(m<target){
     const required=requiredFee(student,classId,m);
-    const paid=recs.filter(e=>e.forMonth===m&&e.source==='Monthly Fee').reduce((a,e)=>a+Number(e.amount),0);
+    const paid=recs.filter(e=>e.forMonth===m&&(e.source==='Monthly Fee'||isCovered(e))).reduce((a,e)=>a+Number(e.amount),0);
     const skipped=recs.some(e=>e.forMonth===m&&e.source==='Skipped');
     if(!skipped && required>0 && paid<required) return m;
     m=nextMonth(m);
@@ -529,7 +529,7 @@ function firstUnsettledMonthBefore(student,classId,target){
   return null;
 }
 /* colour-code status pills automatically */
-const PILL_MAP={paid:'ok',present:'ok',active:'ok',due:'bad',absent:'bad',inactive:'muted',partial:'warn',skipped:'muted',unmarked:'muted',pending:'warn',overpaid:'warn'};
+const PILL_MAP={covered:'ok',paid:'ok',present:'ok',active:'ok',due:'bad',absent:'bad',inactive:'muted',partial:'warn',skipped:'muted',unmarked:'muted',pending:'warn',overpaid:'warn'};
 function decoratePills(root){ root.querySelectorAll('.pill:not([data-d])').forEach(p=>{ p.dataset.d='1'; const k=PILL_MAP[p.textContent.trim().toLowerCase()]; if(k) p.classList.add('pill-'+k); }); }
 new MutationObserver(()=>decoratePills(document.getElementById('app'))).observe(document.getElementById('app'),{childList:true,subtree:true});
 function personName(type,id){ const list= type==='student'?DB.students:type==='teacher'?DB.teachers:DB.staff; const p=list.find(x=>x.id===id); return p?(p.no?p.no+' - ':'')+p.firstName+' '+(p.lastName||''):'(removed)'; }
@@ -571,7 +571,7 @@ function render(){ attRefresh=null; renderTabs(); const app=document.getElementB
 function viewDashboard(){
   const wrap=el('div'); const today=new Date().toISOString().slice(0,10); const mp=today.slice(0,7);
   const presentToday=DB.attendance.filter(a=>a.date===today&&a.status==='present').length;
-  const incM=DB.income.filter(e=>e.date.startsWith(mp)).reduce((s,e)=>s+Number(e.amount),0);
+  const incM=DB.income.filter(e=>e.date.startsWith(mp)&&!isCovered(e)).reduce((s,e)=>s+Number(e.amount),0);
   const admM=DB.admissions.filter(e=>e.date.startsWith(mp)).reduce((s,e)=>s+Number(e.amount),0);
   const expM=DB.exp.filter(e=>e.date.startsWith(mp)).reduce((s,e)=>s+Number(e.amount),0);
   const tpM=DB.tpay.filter(e=>e.date.startsWith(mp)).reduce((s,e)=>s+Number(e.amount),0);
@@ -939,15 +939,15 @@ function viewTPay(){
       shown=list;
       const st=TABLE_STATES[sid]||{q:'',f:{}}; const desc=[];
       filters.forEach(f=>{ const v=st.f[f.key]; if(v){ const o=f.options.find(x=>x.value===v); desc.push(f.label+': '+(o?o.label:v)); } }); if(st.q) desc.push('Search: "'+st.q+'"');
-      const C=list.reduce((s,r)=>s+r.collected,0), E=list.reduce((s,r)=>s+r.earned,0), P=list.reduce((s,r)=>s+r.paid,0), B=list.reduce((s,r)=>s+(r.balance>=1?r.balance:0),0);
+      const C=list.reduce((s,r)=>s+r.collected,0), V=list.reduce((s,r)=>s+r.covered,0), E=list.reduce((s,r)=>s+r.earned,0), P=list.reduce((s,r)=>s+r.paid,0), B=list.reduce((s,r)=>s+(r.balance>=1?r.balance:0),0);
       sumHost.innerHTML=''; const tw=el('div',{class:'tablewrap',style:'margin-top:8px'}); const tb=el('table');
-      tb.appendChild(el('tr',{},el('th',{},'Totals for the teachers shown'),el('th',{},'Collected'),el('th',{},'Earned'),el('th',{},'Paid so far'),el('th',{},'Balance to pay')));
-      tb.appendChild(el('tr',{},el('td',{},el('b',{},list.length+' teacher'+(list.length===1?'':'s'))),el('td',{},el('b',{},money(C))),el('td',{},el('b',{},money(E))),el('td',{},el('b',{},money(P))),el('td',{},el('b',{},money(B)))));
-      tw.appendChild(tb); sumHost.appendChild(tw);
-      let html='<h1>'+ctx.title+'</h1><p>'+ctx.range+(desc.length?'<br>Filters: '+desc.join(' · '):'')+'</p><table><tr><th>Teacher</th><th>Pay</th><th>Collected</th><th>Earned</th><th>Paid so far</th><th>Balance to pay</th><th>Status</th></tr>';
-      list.forEach(r=>{ html+=trHtml([r.t.no+' - '+r.t.firstName+' '+(r.t.lastName||''),r.freq,money(r.collected),money(r.earned),money(r.paid),money(Math.max(r.balance,0)),r.status],r.status==='Pending'); });
-      if(!list.length) html+='<tr><td colspan="7">No teachers match.</td></tr>';
-      html+='<tr><td colspan="2"><b>TOTAL</b></td><td><b>'+money(C)+'</b></td><td><b>'+money(E)+'</b></td><td><b>'+money(P)+'</b></td><td><b>'+money(B)+'</b></td><td></td></tr></table>';
+      tb.appendChild(el('tr',{},el('th',{},'Totals for the teachers shown'),el('th',{},'Collected'),el('th',{},'Covered by institute'),el('th',{},'Earned'),el('th',{},'Paid so far'),el('th',{},'Balance to pay')));
+      tb.appendChild(el('tr',{},el('td',{},el('b',{},list.length+' teacher'+(list.length===1?'':'s'))),el('td',{},el('b',{},money(C))),el('td',{},el('b',{},money(V))),el('td',{},el('b',{},money(E))),el('td',{},el('b',{},money(P))),el('td',{},el('b',{},money(B)))));
+      tw.appendChild(tb); sumHost.appendChild(tw); if(V>0) sumHost.appendChild(el('p',{class:'small'},'"Covered by institute" = fees the institute pays on behalf of students. The teacher earns their share of these too, but they are not counted as income.'));
+      let html='<h1>'+ctx.title+'</h1><p>'+ctx.range+(desc.length?'<br>Filters: '+desc.join(' · '):'')+'</p><table><tr><th>Teacher</th><th>Pay</th><th>Collected</th><th>Covered by institute</th><th>Earned</th><th>Paid so far</th><th>Balance to pay</th><th>Status</th></tr>';
+      list.forEach(r=>{ html+=trHtml([r.t.no+' - '+r.t.firstName+' '+(r.t.lastName||''),r.freq,money(r.collected),money(r.covered),money(r.earned),money(r.paid),money(Math.max(r.balance,0)),r.status],r.status==='Pending'); });
+      if(!list.length) html+='<tr><td colspan="8">No teachers match.</td></tr>';
+      html+='<tr><td colspan="2"><b>TOTAL</b></td><td><b>'+money(C)+'</b></td><td><b>'+money(V)+'</b></td><td><b>'+money(E)+'</b></td><td><b>'+money(P)+'</b></td><td><b>'+money(B)+'</b></td><td></td></tr></table>';
       detHost.innerHTML='';
       if(withStudents){
         list.forEach(r=>{ const lines=studentPaymentLines(r); if(!lines.length) return; const tname=r.t.no+' - '+r.t.firstName+' '+(r.t.lastName||'');
@@ -963,15 +963,15 @@ function viewTPay(){
     }
     renderFilterSortTable(host,{
       id:sid, rows, emptyText:mode==='day'?'No student payments were received on this day, and nothing has been paid to teachers for it.':'No student payments were received in this period, and nothing has been paid to teachers for this month.',
-      headers:[{label:'Teacher',key:'teacher',sortable:true},{label:'Pay',key:'freq',sortable:true},{label:'Collected',key:'collected',sortable:true},{label:'Earned (share)',key:'earned',sortable:true},{label:'Paid so far',key:'paid',sortable:true},{label:'Balance to pay',key:'balance',sortable:true},{label:'Status',key:'status',sortable:true},{label:'',key:null,sortable:false}],
+      headers:[{label:'Teacher',key:'teacher',sortable:true},{label:'Pay',key:'freq',sortable:true},{label:'Collected',key:'collected',sortable:true},{label:'Covered by institute',key:'covered',sortable:true},{label:'Earned (share)',key:'earned',sortable:true},{label:'Paid so far',key:'paid',sortable:true},{label:'Balance to pay',key:'balance',sortable:true},{label:'Status',key:'status',sortable:true},{label:'',key:null,sortable:false}],
       filters, onChange:update,
       searchText:r=>[r.t.no,r.t.firstName,r.t.lastName,r.status,r.freq].join(' '),
-      sortVal:(r,k)=>{ if(k==='teacher') return r.t.firstName||''; if(['collected','earned','paid','balance'].includes(k)) return r[k]; return r[k]||r.status; },
+      sortVal:(r,k)=>{ if(k==='teacher') return r.t.firstName||''; if(['collected','covered','earned','paid','balance'].includes(k)) return r[k]; return r[k]||r.status; },
       cellsFor:r=>{ const btns=el('div',{class:'row'});
         btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>payableDetailsDialog(r.t,r,ctx)},'Details'));
         if(r.status==='Pending') btns.appendChild(el('button',{class:'btn small',onclick:()=>payTeacherDialog(r.t,r,ctx)},'Mark as paid'));
         const bal=el('b'); bal.textContent=money(Math.max(r.balance,0));
-        return [r.t.no+' - '+r.t.firstName+' '+(r.t.lastName||''), r.freq, money(r.collected), money(r.earned), money(r.paid), bal, el('span',{class:'pill'},r.status), btns]; }
+        return [r.t.no+' - '+r.t.firstName+' '+(r.t.lastName||''), r.freq, money(r.collected), money(r.covered), money(r.earned), money(r.paid), bal, el('span',{class:'pill'},r.status), btns]; }
     });
   }
   pDetail.onchange=drawPayable; pMode.onchange=drawPayable; pMonth.onchange=()=>{ pUpTo.value=defaultUpTo(pMonth.value); drawPayable(); }; pUpTo.onchange=drawPayable; pDay.onchange=drawPayable; drawPayable();
@@ -1077,6 +1077,8 @@ function viewAdmissions(){
 }
 
 /* ---------- INCOME (per student, per subject) ---------- */
+const COVERED='Covered by institute';
+function isCovered(e){ return e.source===COVERED; }
 const INCOME_UI={trackerMonth:'',prefill:null};
 const ADJUST_REASONS=['Teacher was absent','Joined in the middle of the month','Other'];
 function adjustmentFor(student,classId,month){
@@ -1087,6 +1089,35 @@ function adjustmentFor(student,classId,month){
 }
 /* the fee that applies to ONE month: a half-fee / custom adjustment if an admin set one, otherwise the normal fee */
 function requiredFee(student,classId,month){ const a=adjustmentFor(student,classId,month); return a?(Number(a.adjustedFee)||0):getFee(student,classId,'Monthly Fee'); }
+const WAIVE_REASONS=['Student was on leave / not attending','Class cancelled or teacher absent','Joined late','Approved concession','Other'];
+function prevMonth(ym){ let [y,m]=ym.split('-').map(Number); m--; if(m<1){ m=12; y--; } return y+'-'+String(m).padStart(2,'0'); }
+/* waive (skip) one month or a whole range of past months, with a recorded reason; months already paid or already skipped are left alone */
+function waiveDialog(student,cls,defFrom,defTo,onDone){
+  const {box,close}=overlayBox(450); const sname=student.firstName+' '+(student.lastName||'');
+  box.appendChild(el('h2',{},'Skip / waive months'));
+  const info=el('p',{class:'small'}); info.textContent=sname+' — '+cls.name+'. Waived months are not charged: they show as Skipped (never Due) and stop blocking later months. Months already paid or already skipped are left alone.'; box.appendChild(info);
+  const fromIn=el('input',{type:'month',value:defFrom}); const toIn=el('input',{type:'month',value:defTo});
+  const reasonSel=el('select'); WAIVE_REASONS.forEach(r=>reasonSel.appendChild(el('option',{value:r},r)));
+  const noteInp=el('input',{type:'text',placeholder:'Note (optional)'});
+  const preview=el('p',{class:'small'}); preview.style.cssText='font-weight:600;color:var(--text);';
+  const months=()=>{ let a=fromIn.value,b=toIn.value; if(!a||!b) return []; if(a>b){ const x=a; a=b; b=x; } return monthRange(a,b); };
+  const todo=()=>months().filter(m=>{ const skipped=DB.income.some(e=>e.studentId===student.id&&e.classId===cls.id&&e.source==='Skipped'&&e.forMonth===m); if(skipped) return false;
+    const paid=DB.income.filter(e=>e.studentId===student.id&&e.classId===cls.id&&(e.source==='Monthly Fee'||isCovered(e))&&e.forMonth===m).reduce((s,e)=>s+Number(e.amount),0); const req=requiredFee(student,cls.id,m); return !(paid>0&&paid>=req); });
+  const upd=()=>{ const t=todo(); preview.textContent=t.length?t.length+' month'+(t.length===1?'':'s')+' will be waived: '+t.map(m=>monthLabel(m)).join(', '):'Nothing to waive — those months are already paid or skipped.'; };
+  fromIn.onchange=upd; toIn.onchange=upd;
+  [['From month',fromIn],['To month',toIn],['Reason',reasonSel],['Note',noteInp]].forEach(([l,i])=>{ const d=el('div'); d.appendChild(el('label',{},l)); d.appendChild(i); box.appendChild(d); });
+  box.appendChild(preview); upd();
+  const row=el('div',{class:'row'}); row.style.cssText='justify-content:flex-end;margin-top:8px;';
+  row.appendChild(el('button',{class:'btn secondary',type:'button',onclick:close},'Cancel'));
+  row.appendChild(el('button',{class:'btn',type:'button',onclick:()=>{
+    const t=todo(); if(!t.length){ notify('Nothing to waive in that range.'); return; } const reason=reasonSel.value, note=noteInp.value; close();
+    confirmAdmin('waive '+t.length+' month'+(t.length===1?'':'s')+' for '+sname, ()=>{
+      t.forEach(m=>DB.income.push({id:uid(),studentId:student.id,classId:cls.id,source:'Skipped',amount:0,reason,note,date:new Date().toISOString().slice(0,10),forMonth:m}));
+      const pr=save('income'); onDone(); showSavedDialog(t.length+' month'+(t.length===1?'':'s')+' waived for '+sname+' — '+cls.name+' ('+reason+'): '+t.map(m=>monthLabel(m)).join(', ')+'.', pr);
+    });
+  }},'Waive (needs admin password)'));
+  box.appendChild(row);
+}
 function feeAdjustDialog(student,cls,month,onDone){
   const full=getFee(student,cls.id,'Monthly Fee'); const sname=student.firstName+' '+(student.lastName||'');
   const overlay=el('div'); overlay.style.cssText='position:fixed;inset:0;background:rgba(8,20,36,.55);display:flex;align-items:center;justify-content:center;z-index:300;padding:16px;';
@@ -1127,7 +1158,7 @@ function viewIncome(){
   const teacherSel=el('select');
   const classSel=el('select'); classSel.appendChild(el('option',{value:''},'— select subject/class —'));
   const studentSel=el('select'); studentSel.appendChild(el('option',{value:''},'— select student —'));
-  const sourceSel=el('select'); ['Monthly Fee','Daily Fee','Other'].forEach(s=>sourceSel.appendChild(el('option',{value:s},s)));
+  const sourceSel=el('select'); ['Monthly Fee','Daily Fee','Other',COVERED].forEach(s=>sourceSel.appendChild(el('option',{value:s},s)));
   const amtInput=el('input',{type:'number',placeholder:'Amount'}); const dateInput=el('input',{type:'date',value:new Date().toISOString().slice(0,10)});
   const forMonthWrap=el('div'); const forMonthInput=el('input',{type:'month',value:new Date().toISOString().slice(0,7)});
   forMonthWrap.appendChild(el('label',{},'For Month (which billing month this covers)')); forMonthWrap.appendChild(forMonthInput);
@@ -1151,16 +1182,17 @@ function viewIncome(){
     updateNoteAndAmount(true); }
   function resetTo(inst){ instSel.value=inst||''; fillTeachers(); teacherSel.value=''; refreshClasses(); }
   function updateNoteAndAmount(auto){
-    const s=DB.students.find(x=>x.id===studentSel.value); const c=DB.classes.find(x=>x.id===classSel.value); const monthly=sourceSel.value==='Monthly Fee';
+    const s=DB.students.find(x=>x.id===studentSel.value); const c=DB.classes.find(x=>x.id===classSel.value); const monthly=(sourceSel.value==='Monthly Fee'||sourceSel.value===COVERED);
     forMonthWrap.style.display = monthly ? 'block' : 'none';
     const freeSub=!!(s&&c&&isFreeEnrollment(s,c.id));
-    adjBtn.style.display = (monthly&&s&&c&&!editingId&&!freeSub) ? '' : 'none';
+    adjBtn.style.display = (sourceSel.value==='Monthly Fee'&&s&&c&&!editingId&&!freeSub) ? '' : 'none';
+    if(sourceSel.value===COVERED&&s&&c&&freeSub){ noteEl.textContent='Free-card subject: enter the fee the institute is covering — the teacher earns their share of it. It is not counted as income.'; if(auto&&!editingId&&Number(c.monthlyFee)) amtInput.value=Number(c.monthlyFee); return; }
     if(s && s.paymentType==='Free Card'){ noteEl.textContent='This student is on a Free Card — no fee is normally expected.'; return; }
     if(freeSub){ noteEl.textContent='This subject is a free card for this student — no fee is normally expected.'; return; }
     if(!(s&&c)){ noteEl.textContent=''; return; }
     if(monthly){
       const m=forMonthInput.value; const req=requiredFee(s,c.id,m); const adj=adjustmentFor(s,c.id,m);
-      const paid=DB.income.filter(e=>e.studentId===s.id&&e.classId===c.id&&e.source==='Monthly Fee'&&e.forMonth===m).reduce((a,e)=>a+Number(e.amount),0);
+      const paid=DB.income.filter(e=>e.studentId===s.id&&e.classId===c.id&&(e.source==='Monthly Fee'||isCovered(e))&&e.forMonth===m).reduce((a,e)=>a+Number(e.amount),0);
       noteEl.textContent='Fee for '+monthLabel(m)+': '+money(req)+(adj?' (adjusted from '+money(getFee(s,c.id,'Monthly Fee'))+' — '+adj.reason+')':'')+(paid?' · already paid '+money(paid)+' · balance '+money(Math.max(req-paid,0)):'');
       if(auto&&!editingId){ const bal=Math.max(req-paid,0); if(bal>0) amtInput.value=bal; }
     } else { noteEl.textContent=''; if(auto&&!editingId){ const f=getFee(s,c.id,sourceSel.value); if(f) amtInput.value=f; } }
@@ -1174,19 +1206,23 @@ function viewIncome(){
   const saveBtn=el('button',{class:'btn',onclick:()=>{
     if(!studentSel.value||!classSel.value||!amtInput.value){ notify('Select subject, student and amount'); return; }
     const s=DB.students.find(x=>x.id===studentSel.value);
-    if(sourceSel.value==='Monthly Fee' && !editingId){
+    if((sourceSel.value==='Monthly Fee'||sourceSel.value===COVERED) && !editingId){
       const required=requiredFee(s,classSel.value,forMonthInput.value);
-      const already=DB.income.filter(e=>e.studentId===studentSel.value&&e.classId===classSel.value&&e.source==='Monthly Fee'&&e.forMonth===forMonthInput.value).reduce((sum,e)=>sum+Number(e.amount),0);
+      const already=DB.income.filter(e=>e.studentId===studentSel.value&&e.classId===classSel.value&&(e.source==='Monthly Fee'||isCovered(e))&&e.forMonth===forMonthInput.value).reduce((sum,e)=>sum+Number(e.amount),0);
+      if(sourceSel.value===COVERED&&required<=0&&DB.income.some(e=>isCovered(e)&&e.studentId===studentSel.value&&e.classId===classSel.value&&e.forMonth===forMonthInput.value)){ notify('This month is already covered by the institute for this student.'); return; }
       if(required>0 && already>=required){ notify('This student has already fully paid for '+forMonthInput.value+' — record blocked to avoid duplicate payment.'); return; }
       const blocker=firstUnsettledMonthBefore(s,classSel.value,forMonthInput.value);
-      if(blocker){ notify('Cannot record '+monthLabel(forMonthInput.value)+': '+monthLabel(blocker)+' has not been paid yet. Record '+monthLabel(blocker)+' first (or ask an admin to skip or adjust it).'); return; }
+      if(blocker){ notify('Cannot record '+monthLabel(forMonthInput.value)+': '+monthLabel(blocker)+' has not been paid yet. Record '+monthLabel(blocker)+' first (or have an admin waive it from Monthly Payment Status).'); return; }
     }
-    const rec={studentId:studentSel.value,classId:classSel.value,source:sourceSel.value,amount:amtInput.value,date:dateInput.value,forMonth:sourceSel.value==='Monthly Fee'?forMonthInput.value:''};
+    const rec={studentId:studentSel.value,classId:classSel.value,source:sourceSel.value,amount:amtInput.value,date:dateInput.value,forMonth:(sourceSel.value==='Monthly Fee'||sourceSel.value===COVERED)?forMonthInput.value:''};
     const wasEdit=!!editingId;
-    if(editingId){ const i=DB.income.findIndex(x=>x.id===editingId); DB.income[i]=Object.assign(DB.income[i],rec); editingId=null; }
-    else { rec.id=uid(); DB.income.push(rec); }
-    const pr=save('income'); render(); const cl=DB.classes.find(x=>x.id===rec.classId);
-    showSavedDialog('Payment of '+money(rec.amount)+' from '+s.firstName+' '+(s.lastName||'')+' for '+(cl?cl.name:'the subject')+(rec.forMonth?' ('+monthLabel(rec.forMonth)+')':'')+' '+(wasEdit?'updated':'recorded')+'.', pr);
+    const finish=()=>{
+      if(editingId){ const i=DB.income.findIndex(x=>x.id===editingId); DB.income[i]=Object.assign(DB.income[i],rec); editingId=null; }
+      else { rec.id=uid(); DB.income.push(rec); }
+      const pr=save('income'); render(); const cl=DB.classes.find(x=>x.id===rec.classId);
+      showSavedDialog((isCovered(rec)?'Fee of '+money(rec.amount)+' covered by the institute for ':'Payment of '+money(rec.amount)+' from ')+s.firstName+' '+(s.lastName||'')+' for '+(cl?cl.name:'the subject')+(rec.forMonth?' ('+monthLabel(rec.forMonth)+')':'')+' '+(wasEdit?'updated':'recorded')+'.', pr);
+    };
+    if(isCovered(rec)&&!wasEdit) confirmAdmin('record a fee covered by the institute ('+money(rec.amount)+')', finish); else finish();
   }},'Save Payment'); card.appendChild(saveBtn);
   wrap.appendChild(card);
 
@@ -1199,10 +1235,11 @@ function viewIncome(){
     DB.students.filter(s=>s.status!=='inactive'&&s.paymentType==='Monthly').forEach(s=>{
       normalizeEnrollments(s).forEach(en=>{ const c=DB.classes.find(x=>x.id===en.classId); if(!c) return; if(isFreeEnrollment(s,c.id)) return;
         const adj=adjustmentFor(s,c.id,mp); const required=requiredFee(s,c.id,mp);
-        const paidSum=DB.income.filter(e=>e.studentId===s.id&&e.classId===c.id&&e.source==='Monthly Fee'&&e.forMonth===mp).reduce((sum,e)=>sum+Number(e.amount),0);
+        const paidSum=DB.income.filter(e=>e.studentId===s.id&&e.classId===c.id&&(e.source==='Monthly Fee'||isCovered(e))&&e.forMonth===mp).reduce((sum,e)=>sum+Number(e.amount),0);
+        const covSum=DB.income.filter(e=>e.studentId===s.id&&e.classId===c.id&&isCovered(e)&&e.forMonth===mp).reduce((sum,e)=>sum+Number(e.amount),0);
         const skipped=DB.income.some(e=>e.studentId===s.id&&e.classId===c.id&&e.source==='Skipped'&&e.forMonth===mp);
-        const status = skipped ? 'Skipped' : (paidSum<=0 ? 'Due' : (paidSum>=required ? 'Paid' : 'Partial'));
-        rows.push({s,c,en,status,required,paidSum,adj});
+        const fullyPaid=paidSum>0&&paidSum>=required; const status = fullyPaid ? (covSum>0?'Covered':'Paid') : (skipped ? 'Skipped' : (paidSum<=0 ? 'Due' : 'Partial'));
+        rows.push({s,c,en,status,required,paidSum,covSum,adj});
       });
     });
     renderFilterSortTable(dueOut,{
@@ -1213,7 +1250,7 @@ function viewIncome(){
         {label:'Institute',key:'inst',options:INSTITUTES.map(i=>({value:i,label:i})),test:(r,v)=>r.c.institute===v},
         {label:'Teacher',key:'teacher',options:teacherOpts,test:(r,v)=>r.c.teacherId===v},
         {label:'Subject',key:'cls',options:DB.classes.map(c=>({value:c.id,label:c.institute+': '+c.name})),test:(r,v)=>r.c.id===v},
-        {label:'Status',key:'st',options:['Due','Partial','Paid','Skipped'].map(x=>({value:x,label:x})),test:(r,v)=>r.status===v}
+        {label:'Status',key:'st',options:['Due','Partial','Paid','Covered','Skipped'].map(x=>({value:x,label:x})),test:(r,v)=>r.status===v}
       ],
       searchText:r=>[r.s.no,r.s.firstName,r.s.lastName,r.c.name,r.c.institute,r.status].join(' '),
       sortVal:(r,k)=>{ if(k==='student') return r.s.firstName||''; if(k==='subject') return r.c.name; if(k==='institute') return r.c.institute; if(k==='required'||k==='paidSum') return Number(r[k])||0; return r.status; },
@@ -1222,7 +1259,8 @@ function viewIncome(){
         const blocker=firstUnsettledMonthBefore(r.s,r.c.id,mp); const targetMonth=blocker||mp;
         if(r.status!=='Paid') btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ resetTo(r.c.institute); classSel.value=r.c.id; refreshStudents(); studentSel.value=r.s.id; sourceSel.value='Monthly Fee'; forMonthInput.value=targetMonth; updateNoteAndAmount(true); window.scrollTo(0,0); }},blocker?('Pay '+monthLabel(blocker)+' first'):'Record Payment'));
         if(r.status==='Due'||r.status==='Partial') btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>feeAdjustDialog(r.s,r.c,mp,()=>render())},'Adjust fee'));
-        if(r.status==='Due'||r.status==='Partial') btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ confirmAdmin('skip '+r.s.firstName+"'s payment for "+mp, ()=>{ DB.income.push({id:uid(),studentId:r.s.id,classId:r.c.id,source:'Skipped',amount:0,date:new Date().toISOString().slice(0,10),forMonth:mp}); const pr=save('income'); render(); showSavedDialog('Payment for '+monthLabel(mp)+' marked as skipped for '+r.s.firstName+' '+(r.s.lastName||'')+' ('+r.c.name+').', pr); }); }},'Skip'));
+        if(r.status==='Due'||r.status==='Partial') btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ const b=firstUnsettledMonthBefore(r.s,r.c.id,mp); if(b){ notify(monthLabel(b)+' is still unsettled for this student — settle or waive it first.'); return; } const amt=Math.max(r.required-r.paidSum,0); confirmAdmin('record that the institute covers '+monthLabel(mp)+' for '+r.s.firstName+' ('+money(amt)+')', ()=>{ DB.income.push({id:uid(),studentId:r.s.id,classId:r.c.id,source:COVERED,amount:String(amt),date:new Date().toISOString().slice(0,10),forMonth:mp}); const pr=save('income'); render(); showSavedDialog('The institute covers '+money(amt)+' for '+r.s.firstName+' '+(r.s.lastName||'')+' — '+r.c.name+' ('+monthLabel(mp)+'). The teacher earns their share; it is not counted as income.', pr); }); }},'Covered by institute'));
+        if(r.status==='Due'||r.status==='Partial') btns.appendChild(el('button',{class:'btn small secondary',onclick:()=>{ const b=firstUnsettledMonthBefore(r.s,r.c.id,mp); waiveDialog(r.s,r.c,b||mp,b?prevMonth(mp):mp,()=>render()); }},'Skip / waive…'));
         return [r.s.no+' - '+r.s.firstName+' '+(r.s.lastName||''), r.c.name+(r.en.level?' ('+r.en.level+')':''), r.c.institute, money(r.required)+(r.adj?' (adjusted)':''), money(r.paidSum), el('span',{class:'pill'},r.status), btns];
       }
     });
@@ -1238,7 +1276,7 @@ function viewIncome(){
       {label:'Teacher',key:'teacher',options:teacherOpts,test:(p,v)=>{ const c=DB.classes.find(x=>x.id===p.classId); return !!c&&c.teacherId===v; }},
       {label:'Subject',key:'cls',options:DB.classes.map(c=>({value:c.id,label:c.institute+': '+c.name})),test:(p,v)=>p.classId===v},
       {label:'Problems',key:'prob',options:[{value:'orphan',label:'Missing student or subject'}],test:(p)=>!DB.students.some(s=>s.id===p.studentId)||!DB.classes.some(c=>c.id===p.classId)},
-      {label:'Source',key:'src',options:['Monthly Fee','Daily Fee','Other','Skipped','Fee adjustment'].map(x=>({value:x,label:x})),test:(p,v)=>p.source===v},
+      {label:'Source',key:'src',options:['Monthly Fee','Daily Fee','Other',COVERED,'Skipped','Fee adjustment'].map(x=>({value:x,label:x})),test:(p,v)=>p.source===v},
       {label:'Date received (month)',key:'recv',type:'month',test:(p,v)=>(p.date||'').startsWith(v)},
       {label:'For month',key:'forM',type:'month',test:(p,v)=>p.forMonth===v}
     ],
@@ -1253,11 +1291,11 @@ function viewIncome(){
         resetTo(c?c.institute:''); classSel.value=p.classId; refreshStudents(); studentSel.value=p.studentId; sourceSel.value=p.source; amtInput.value=p.amount; dateInput.value=p.date; forMonthInput.value=p.forMonth||new Date().toISOString().slice(0,7); editingId=p.id; updateNoteAndAmount(false); window.scrollTo(0,0);
       }); }},'Edit'));
       btns.appendChild(el('button',{class:'btn danger',onclick:()=>{ confirmAdmin('delete this payment record', ()=>{ DB.income=DB.income.filter(x=>x.id!==p.id); save('income'); render(); }); }},'Delete'));
-      const amountCell = p.source==='Fee adjustment' ? 'Fee set to '+money(p.adjustedFee)+' ('+(p.reason||'adjusted')+')' : (p.source==='Skipped' ? 'Skipped' : money(p.amount));
+      const amountCell = p.source==='Fee adjustment' ? 'Fee set to '+money(p.adjustedFee)+' ('+(p.reason||'adjusted')+')' : (p.source==='Skipped' ? 'Skipped'+(p.reason?' ('+p.reason+')':'') : money(p.amount));
       return [p.date, p.forMonth||'—', s?s.no+' - '+s.firstName+' '+(s.lastName||''):'(removed)', c?c.name:'(removed)', el('span',{class:'pill'},p.source), amountCell, btns];
     }
   });
-  listCard.appendChild(el('p',{class:'small'},'Total recorded: '+money(DB.income.reduce((s,p)=>s+Number(p.amount),0))));
+  { const covTotal=DB.income.filter(isCovered).reduce((s,p)=>s+Number(p.amount),0); listCard.appendChild(el('p',{class:'small'},'Total received: '+money(DB.income.filter(p=>!isCovered(p)).reduce((s,p)=>s+Number(p.amount),0))+(covTotal?' · plus fees covered by the institute (not income): '+money(covTotal):''))); }
   wrap.appendChild(listCard); return wrap;
 }
 
@@ -1279,19 +1317,21 @@ function viewIncomeReports(){
   const dOut=el('div'); dCard.appendChild(dOut); wrap.appendChild(dCard);
   function renderDaily(){ dOut.innerHTML=''; const date=dateInput.value; const tw=el('div',{class:'tablewrap'}); const tbl=el('table');
     tbl.appendChild(el('tr',{},el('th',{},'Subject'),el('th',{},'Class time'),el('th',{},'Income'),el('th',{},"Teacher's Cut"),el('th',{},'Profit')));
-    let tI=0,tC=0,tP=0; let rows='';
-    DB.classes.forEach(c=>{ const inc=DB.income.filter(e=>e.classId===c.id&&e.date===date).reduce((s,e)=>s+Number(e.amount),0); if(!inc) return; const cut=inc*shareOf(c)/100; const profit=inc-cut;
-      tI+=inc;tC+=cut;tP+=profit; tbl.appendChild(el('tr',{},el('td',{},c.institute+': '+c.name),el('td',{},classTime(c)||'—'),el('td',{},money(inc)),el('td',{},money(cut)),el('td',{},money(profit))));
+    let tI=0,tC=0,tP=0,covTot=0; let rows='';
+    DB.classes.forEach(c=>{ const inc=DB.income.filter(e=>e.classId===c.id&&e.date===date&&!isCovered(e)).reduce((s,e)=>s+Number(e.amount),0); const cov=DB.income.filter(e=>e.classId===c.id&&e.date===date&&isCovered(e)).reduce((s,e)=>s+Number(e.amount),0); if(!inc&&!cov) return; const cut=(inc+cov)*shareOf(c)/100; const profit=inc-cut;
+      covTot+=cov; tI+=inc;tC+=cut;tP+=profit; tbl.appendChild(el('tr',{},el('td',{},c.institute+': '+c.name),el('td',{},classTime(c)||'—'),el('td',{},money(inc)),el('td',{},money(cut)),el('td',{},money(profit))));
       rows+='<tr><td>'+c.institute+': '+c.name+'</td><td>'+(classTime(c)||'—')+'</td><td>'+money(inc)+'</td><td>'+money(cut)+'</td><td>'+money(profit)+'</td></tr>'; });
     const admToday=DB.admissions.filter(a=>a.date===date).reduce((s,a)=>s+Number(a.amount),0);
     if(admToday){ tI+=admToday; tP+=admToday; tbl.appendChild(el('tr',{},el('td',{},'Admission Fees'),el('td',{},'—'),el('td',{},money(admToday)),el('td',{},money(0)),el('td',{},money(admToday))));
       rows+='<tr><td>Admission Fees</td><td>—</td><td>'+money(admToday)+'</td><td>'+money(0)+'</td><td>'+money(admToday)+'</td></tr>'; }
     tbl.appendChild(el('tr',{},el('td',{},el('b',{},'Total')),el('td',{},''),el('td',{},el('b',{},money(tI))),el('td',{},el('b',{},money(tC))),el('td',{},el('b',{},money(tP)))));
     tw.appendChild(tbl); dOut.appendChild(tw);
+    const covNote=covTot>0?'Teacher\'s cut includes '+money(covTot)+' of fees covered by the institute on behalf of students (not counted as income).':'';
+    if(covNote) dOut.appendChild(el('p',{class:'small'},covNote));
 
     dOut.appendChild(el('h2',{style:'font-size:13px;margin:14px 0 6px'},'Student Payments — '+date));
     const lines=[];
-    DB.income.filter(e=>e.date===date&&Number(e.amount)>0).forEach(pm=>{ const s=DB.students.find(x=>x.id===pm.studentId); const c=DB.classes.find(x=>x.id===pm.classId);
+    DB.income.filter(e=>e.date===date&&Number(e.amount)>0&&!isCovered(e)).forEach(pm=>{ const s=DB.students.find(x=>x.id===pm.studentId); const c=DB.classes.find(x=>x.id===pm.classId);
       lines.push({name:s?s.no+' - '+s.firstName+' '+(s.lastName||''):'(removed)', subj:c?c.name:'(removed)', inst:c?c.institute:'', month:pm.forMonth?monthLabel(pm.forMonth):'—', amount:Number(pm.amount)}); });
     DB.admissions.filter(a=>a.date===date&&Number(a.amount)>0).forEach(a=>{ const s=DB.students.find(x=>x.id===a.studentId);
       const insts=s?[...new Set(normalizeEnrollments(s).map(e=>{ const c=DB.classes.find(x=>x.id===e.classId); return c?c.institute:''; }).filter(Boolean))].join(', '):'';
@@ -1307,11 +1347,24 @@ function viewIncomeReports(){
       detailRows+='<tr><td>'+l.name+'</td><td>'+l.subj+'</td><td>'+l.inst+'</td><td>'+l.month+'</td><td style="text-align:right">'+money(l.amount)+'</td></tr>'; });
     tbl2.appendChild(el('tr',{},el('td',{colspan:'4'},el('b',{},'Total ('+lines.length+' payment'+(lines.length===1?'':'s')+')')),el('td',{},el('b',{},money(payTotal)))));
     tw2.appendChild(tbl2); dOut.appendChild(tw2);
+    const covLines=DB.income.filter(e=>e.date===date&&isCovered(e)&&Number(e.amount)>0).map(e=>{ const s=DB.students.find(x=>x.id===e.studentId); const c=DB.classes.find(x=>x.id===e.classId); const te=c?DB.teachers.find(x=>x.id===c.teacherId):null;
+      return {name:s?s.no+' - '+s.firstName+' '+(s.lastName||''):'(removed)',subj:c?c.name:'(removed)',teacher:te?(te.firstName+' '+(te.lastName||'')).trim():'—',month:e.forMonth?monthLabel(e.forMonth):'—',amount:Number(e.amount),share:Number(e.amount)*(c?shareOf(c):0)/100}; });
+    let covHtml='';
+    if(covLines.length){
+      const covTotal=covLines.reduce((s,l)=>s+l.amount,0), covShare=covLines.reduce((s,l)=>s+l.share,0);
+      dOut.appendChild(el('h2',{style:'font-size:13px;margin:14px 0 6px'},'Fees covered by the institute — '+date+' (not received, not counted as income)'));
+      const tw4=el('div',{class:'tablewrap'}); const tb4=el('table'); tb4.appendChild(el('tr',{},el('th',{},'Student'),el('th',{},'Subject/Grade'),el('th',{},'Teacher'),el('th',{},'For Month'),el('th',{},'Fee covered'),el('th',{},'Teacher share')));
+      covHtml='<h2>Fees covered by the institute (not received, not counted as income)</h2><table><tr><th>Student</th><th>Subject/Grade</th><th>Teacher</th><th>For Month</th><th>Fee covered</th><th>Teacher share</th></tr>';
+      covLines.forEach(l=>{ tb4.appendChild(el('tr',{},el('td',{},l.name),el('td',{},l.subj),el('td',{},l.teacher),el('td',{},l.month),el('td',{},money(l.amount)),el('td',{},money(l.share)))); covHtml+='<tr><td>'+l.name+'</td><td>'+l.subj+'</td><td>'+l.teacher+'</td><td>'+l.month+'</td><td style="text-align:right">'+money(l.amount)+'</td><td style="text-align:right">'+money(l.share)+'</td></tr>'; });
+      tb4.appendChild(el('tr',{},el('td',{colspan:'4'},el('b',{},'Total covered')),el('td',{},el('b',{},money(covTotal))),el('td',{},el('b',{},money(covShare)))));
+      covHtml+='<tr><td colspan="4"><b>Total covered</b></td><td style="text-align:right"><b>'+money(covTotal)+'</b></td><td style="text-align:right"><b>'+money(covShare)+'</b></td></tr></table>';
+      tw4.appendChild(tb4); dOut.appendChild(tw4);
+    }
     const dirName=SETTINGS.directorName||'';
     dOut.appendChild(el('div',{class:'sigbox'},el('div',{},"Director's Signature"+(dirName?' — '+dirName:'')),el('div',{},'Date: '+date)));
 
     const sigHtml='<div style="margin-top:56px;display:flex;justify-content:space-between;gap:30px"><div style="border-top:1px solid #333;padding-top:6px;min-width:240px;font-size:12px">Director\'s Signature'+(dirName?'<br><b>'+dirName+'</b>':'')+'</div><div style="border-top:1px solid #333;padding-top:6px;min-width:170px;font-size:12px">Date: '+date+'</div></div>';
-    const body='<h1>Daily Report — '+date+'</h1><h2>Income by Subject</h2><table><tr><th>Subject</th><th>Class time</th><th>Income</th><th>Teacher\'s Cut</th><th>Profit</th></tr>'+rows+'<tr><td><b>Total</b></td><td></td><td><b>'+money(tI)+'</b></td><td><b>'+money(tC)+'</b></td><td><b>'+money(tP)+'</b></td></tr></table><h2>Student Payments</h2><table><tr><th>Student</th><th>Subject/Grade</th><th>Institute</th><th>For Month</th><th>Fee</th></tr>'+(detailRows||'<tr><td colspan="5">No student payments recorded for this date.</td></tr>')+'<tr><td colspan="4"><b>Total ('+lines.length+' payment'+(lines.length===1?'':'s')+')</b></td><td style="text-align:right"><b>'+money(payTotal)+'</b></td></tr></table>'+sigHtml;
+    const body='<h1>Daily Report — '+date+'</h1><h2>Income by Subject</h2><table><tr><th>Subject</th><th>Class time</th><th>Income</th><th>Teacher\'s Cut</th><th>Profit</th></tr>'+rows+'<tr><td><b>Total</b></td><td></td><td><b>'+money(tI)+'</b></td><td><b>'+money(tC)+'</b></td><td><b>'+money(tP)+'</b></td></tr></table><h2>Student Payments</h2><table><tr><th>Student</th><th>Subject/Grade</th><th>Institute</th><th>For Month</th><th>Fee</th></tr>'+(detailRows||'<tr><td colspan="5">No student payments recorded for this date.</td></tr>')+'<tr><td colspan="4"><b>Total ('+lines.length+' payment'+(lines.length===1?'':'s')+')</b></td><td style="text-align:right"><b>'+money(payTotal)+'</b></td></tr></table>'+(covNote?'<p style="font-size:11px;color:#555">'+covNote+'</p>':'')+covHtml+sigHtml;
     const btnRow=el('div',{class:'row',style:'margin-top:10px'});
     btnRow.appendChild(el('button',{class:'btn secondary',onclick:()=>exportReport('daily-report-'+date, body, 'jpg')},'Download as JPEG'));
     btnRow.appendChild(el('button',{class:'btn secondary',onclick:()=>exportReport('daily-report-'+date, body, 'pdf')},'Download as PDF'));
@@ -1326,15 +1379,16 @@ function viewIncomeReports(){
     mOut.appendChild(el('h2',{style:'font-size:13px;margin:0 0 6px'},'Month: '+mp));
     const tw1=el('div',{class:'tablewrap'}); const tbl1=el('table');
     tbl1.appendChild(el('tr',{},el('th',{},'Subject'),el('th',{},'Class time'),el('th',{},'Income'),el('th',{},"Teacher's Cut"),el('th',{},'Profit')));
-    let tI=0,tC=0,tP=0; const earnByTeacher={};
-    DB.classes.forEach(c=>{ const inc=DB.income.filter(e=>e.classId===c.id&&e.date.startsWith(mp)).reduce((s,e)=>s+Number(e.amount),0); const cut=inc*shareOf(c)/100; const profit=inc-cut;
+    let tI=0,tC=0,tP=0,covM=0; const earnByTeacher={};
+    DB.classes.forEach(c=>{ const inc=DB.income.filter(e=>e.classId===c.id&&e.date.startsWith(mp)&&!isCovered(e)).reduce((s,e)=>s+Number(e.amount),0); const cov=DB.income.filter(e=>e.classId===c.id&&e.date.startsWith(mp)&&isCovered(e)).reduce((s,e)=>s+Number(e.amount),0); const cut=(inc+cov)*shareOf(c)/100; const profit=inc-cut;
       if(c.teacherId) earnByTeacher[c.teacherId]=(earnByTeacher[c.teacherId]||0)+cut;
-      if(!inc) return; tI+=inc;tC+=cut;tP+=profit;
+      if(!inc&&!cov) return; covM+=cov; tI+=inc;tC+=cut;tP+=profit;
       tbl1.appendChild(el('tr',{},el('td',{},c.institute+': '+c.name),el('td',{},classTime(c)||'—'),el('td',{},money(inc)),el('td',{},money(cut)),el('td',{},money(profit)))); });
     const admM=DB.admissions.filter(a=>a.date.startsWith(mp)).reduce((s,a)=>s+Number(a.amount),0);
     if(admM){ tI+=admM; tP+=admM; tbl1.appendChild(el('tr',{},el('td',{},'Admission Fees'),el('td',{},'—'),el('td',{},money(admM)),el('td',{},money(0)),el('td',{},money(admM)))); }
     tbl1.appendChild(el('tr',{},el('td',{},el('b',{},'Total')),el('td',{},''),el('td',{},el('b',{},money(tI))),el('td',{},el('b',{},money(tC))),el('td',{},el('b',{},money(tP)))));
     tw1.appendChild(tbl1); mOut.appendChild(tw1);
+    if(covM>0) mOut.appendChild(el('p',{class:'small'},'Teacher\'s cut includes '+money(covM)+' of fees covered by the institute on behalf of students (not counted as income).'));
     mOut.appendChild(el('h2',{style:'font-size:13px;margin:14px 0 6px'},"Each Teacher's Earnings — Month: "+mp));
     const tw2=el('div',{class:'tablewrap'}); const tbl2=el('table');
     tbl2.appendChild(el('tr',{},el('th',{},'Teacher'),el('th',{},'Calculated Earning'),el('th',{},'Actually Paid'),el('th',{},'')));
@@ -1343,10 +1397,10 @@ function viewIncomeReports(){
       const tr=el('tr'); tr.appendChild(el('td',{},t.no+' - '+t.firstName+' '+(t.lastName||''))); tr.appendChild(el('td',{},money(earn))); tr.appendChild(el('td',{},money(paid)));
       const btns=el('div',{class:'row'});
       function buildSlipBody(){
-        const classRows=DB.classes.filter(c=>c.teacherId===t.id).map(c=>{ const inc=DB.income.filter(e=>e.classId===c.id&&e.date.startsWith(mp)).reduce((s,e)=>s+Number(e.amount),0); return {c,inc,cut:inc*shareOf(c)/100}; });
+        const classRows=DB.classes.filter(c=>c.teacherId===t.id).map(c=>{ const inc=DB.income.filter(e=>e.classId===c.id&&e.date.startsWith(mp)&&!isCovered(e)).reduce((s,e)=>s+Number(e.amount),0); const cov=DB.income.filter(e=>e.classId===c.id&&e.date.startsWith(mp)&&isCovered(e)).reduce((s,e)=>s+Number(e.amount),0); return {c,inc,cov,cut:(inc+cov)*shareOf(c)/100}; });
         let body='<h1>Salary Slip — '+t.firstName+' '+(t.lastName||'')+' ('+t.no+')</h1><h2>Month: '+mp+'</h2>';
         classRows.forEach(r=>{
-          body+='<h2>'+r.c.institute+': '+r.c.name+(classTime(r.c)?' ('+classTime(r.c)+')':'')+' — Income '+money(r.inc)+', Share '+shareOf(r.c)+'%, Earning '+money(r.cut)+'</h2>';
+          body+='<h2>'+r.c.institute+': '+r.c.name+(classTime(r.c)?' ('+classTime(r.c)+')':'')+' — Income '+money(r.inc)+(r.cov?', Covered by institute '+money(r.cov):'')+', Share '+shareOf(r.c)+'%, Earning '+money(r.cut)+'</h2>';
           const payers=DB.income.filter(e=>e.classId===r.c.id&&e.date.startsWith(mp)&&Number(e.amount)>0&&e.source!=='Skipped');
           if(payers.length){ body+='<table><tr><th>Student</th><th>Source</th><th>Amount</th><th>Date</th></tr>';
             payers.forEach(p=>{ const st=DB.students.find(x=>x.id===p.studentId); body+='<tr><td>'+(st?st.no+' - '+st.firstName+' '+(st.lastName||''):'(removed)')+'</td><td>'+p.source+'</td><td>'+money(p.amount)+'</td><td>'+p.date+'</td></tr>'; });
@@ -1383,9 +1437,9 @@ function viewIncomeReports(){
     teachers.forEach(t=>{
       const rows=DB.classes.filter(c=>c.teacherId===t.id).sort((a,b)=>(a.institute+a.name).localeCompare(b.institute+b.name)).map(c=>{
         const pays=DB.income.filter(e=>e.classId===c.id&&(e.date||'').startsWith(mp)&&Number(e.amount)>0&&e.source!=='Skipped').sort((a,b)=>a.date.localeCompare(b.date));
-        const total=pays.reduce((s,e)=>s+Number(e.amount),0); const share=shareOf(c);
-        return {c,pays,total,paid:new Set(pays.map(e=>e.studentId)).size,share,earn:total*share/100};
-      }).filter(r=>r.total>0);
+        const total=pays.filter(e=>!isCovered(e)).reduce((s,e)=>s+Number(e.amount),0); const cov=pays.filter(isCovered).reduce((s,e)=>s+Number(e.amount),0); const share=shareOf(c);
+        return {c,pays,total,cov,paid:new Set(pays.map(e=>e.studentId)).size,share,earn:(total+cov)*share/100};
+      }).filter(r=>r.total>0||r.cov>0);
       if(!rows.length&&!gTeacher.value) return;
       shown++; const name=t.no+' - '+t.firstName+' '+(t.lastName||'');
       gOut.appendChild(el('h2',{style:'font-size:13px;margin:14px 0 6px'},name)); html+='<h2>'+name+'</h2>';
@@ -1393,12 +1447,12 @@ function viewIncomeReports(){
       const tw=el('div',{class:'tablewrap'}); const tbl=el('table');
       tbl.appendChild(el('tr',{},el('th',{},'Grade / Subject'),el('th',{},'Institute'),el('th',{},'Class time'),el('th',{},'Students paid'),el('th',{},'Payments'),el('th',{},'Collected'),el('th',{},'Share %'),el('th',{},'Teacher earning')));
       let t1='<table><tr><th>Grade / Subject</th><th>Institute</th><th>Class time</th><th>Students paid</th><th>Payments</th><th>Collected</th><th>Share %</th><th>Teacher earning</th></tr>';
-      let tTotal=0,tEarn=0;
-      rows.forEach(r=>{ tTotal+=r.total; tEarn+=r.earn;
-        tbl.appendChild(el('tr',{},el('td',{},r.c.name),el('td',{},r.c.institute),el('td',{},classTime(r.c)||'—'),el('td',{},String(r.paid)),el('td',{},String(r.pays.length)),el('td',{},money(r.total)),el('td',{},r.share+'%'),el('td',{},money(r.earn))));
-        t1+='<tr><td>'+r.c.name+'</td><td>'+r.c.institute+'</td><td>'+(classTime(r.c)||'—')+'</td><td>'+r.paid+'</td><td>'+r.pays.length+'</td><td style="text-align:right">'+money(r.total)+'</td><td>'+r.share+'%</td><td style="text-align:right">'+money(r.earn)+'</td></tr>'; });
-      tbl.appendChild(el('tr',{},el('td',{colspan:'5'},el('b',{},'Total — '+t.firstName+' '+(t.lastName||''))),el('td',{},el('b',{},money(tTotal))),el('td',{},''),el('td',{},el('b',{},money(tEarn)))));
-      t1+='<tr><td colspan="5"><b>Total</b></td><td style="text-align:right"><b>'+money(tTotal)+'</b></td><td></td><td style="text-align:right"><b>'+money(tEarn)+'</b></td></tr></table>';
+      let tTotal=0,tEarn=0,tCov=0;
+      rows.forEach(r=>{ tTotal+=r.total; tCov+=r.cov; tEarn+=r.earn;
+        tbl.appendChild(el('tr',{},el('td',{},r.c.name),el('td',{},r.c.institute),el('td',{},classTime(r.c)||'—'),el('td',{},String(r.paid)),el('td',{},String(r.pays.length)),el('td',{},money(r.total)+(r.cov?' + '+money(r.cov)+' covered':'')),el('td',{},r.share+'%'),el('td',{},money(r.earn))));
+        t1+='<tr><td>'+r.c.name+'</td><td>'+r.c.institute+'</td><td>'+(classTime(r.c)||'—')+'</td><td>'+r.paid+'</td><td>'+r.pays.length+'</td><td style="text-align:right">'+money(r.total)+(r.cov?' + '+money(r.cov)+' covered':'')+'</td><td>'+r.share+'%</td><td style="text-align:right">'+money(r.earn)+'</td></tr>'; });
+      tbl.appendChild(el('tr',{},el('td',{colspan:'5'},el('b',{},'Total — '+t.firstName+' '+(t.lastName||''))),el('td',{},el('b',{},money(tTotal)+(tCov?' + '+money(tCov)+' covered':''))),el('td',{},''),el('td',{},el('b',{},money(tEarn)))));
+      t1+='<tr><td colspan="5"><b>Total</b></td><td style="text-align:right"><b>'+money(tTotal)+(tCov?' + '+money(tCov)+' covered':'')+'</b></td><td></td><td style="text-align:right"><b>'+money(tEarn)+'</b></td></tr></table>';
       tw.appendChild(tbl); gOut.appendChild(tw); html+=t1; grandCollected+=tTotal; grandEarn+=tEarn;
       if(withStudents) rows.forEach(r=>{
         gOut.appendChild(el('p',{class:'small',style:'margin:10px 0 4px'},r.c.institute+': '+r.c.name+' — student payments'));
@@ -1432,11 +1486,13 @@ function feeCellStatus(s,c,m){
   if(isFreeEnrollment(s,c.id)) return 'free';
   const recs=DB.income.filter(e=>e.studentId===s.id&&e.classId===c.id&&e.forMonth);
   let base=s.joinedDate?String(s.joinedDate).slice(0,7):null;
-  if(!base){ const ms=recs.filter(e=>e.source==='Monthly Fee'||e.source==='Skipped'||e.source==='Fee adjustment').map(e=>e.forMonth).sort(); base=ms[0]||null; }
+  if(!base){ const ms=recs.filter(e=>e.source==='Monthly Fee'||e.source==='Skipped'||e.source==='Fee adjustment'||isCovered(e)).map(e=>e.forMonth).sort(); base=ms[0]||null; }
   if(base&&m<base) return 'na';
+  const required=requiredFee(s,c.id,m); const paid=recs.filter(e=>(e.source==='Monthly Fee'||isCovered(e))&&e.forMonth===m).reduce((a,e)=>a+Number(e.amount),0);
+  const cov=recs.filter(e=>isCovered(e)&&e.forMonth===m).reduce((a,e)=>a+Number(e.amount),0);
+  if(paid>0&&paid>=required) return cov>0?'covered':'paid';
   if(recs.some(e=>e.source==='Skipped'&&e.forMonth===m)) return 'skipped';
-  const required=requiredFee(s,c.id,m); const paid=recs.filter(e=>e.source==='Monthly Fee'&&e.forMonth===m).reduce((a,e)=>a+Number(e.amount),0);
-  if(paid>0&&paid>=required) return 'paid'; if(paid>0) return 'partial'; return 'none';
+  if(paid>0) return 'partial'; return 'none';
 }
 function viewFeeReports(){
   const wrap=el('div'); const card=el('div',{class:'card'}); card.appendChild(el('h2',{},'Fee Status by Subject — students × months'));
@@ -1460,10 +1516,10 @@ function viewFeeReports(){
     const period=monthName(months[0])+' '+months[0].slice(0,4)+(months.length>1?' – '+monthName(months[months.length-1])+' '+months[months.length-1].slice(0,4):'');
     const classes=allowed().filter(c=>!classSel.value||c.id===classSel.value).sort((a,b)=>(a.institute+a.name).localeCompare(b.institute+b.name));
     if(!classes.length){ out.appendChild(el('p',{class:'small'},'No subjects match.')); return; }
-    const LABEL={paid:'Paid',partial:'Partial',free:'Free',skipped:'Skipped',na:'—',none:''};
-    const SCREEN_COLOR={paid:'var(--ok-fg)',partial:'var(--warn-fg)',free:'var(--accent2)',skipped:'var(--muted)',na:'var(--muted)',none:''};
-    const HTML_COLOR={paid:'#0b7a5a',partial:'#b45309',free:'#6d28d9',skipped:'#6b7280',na:'#6b7280',none:'#111'};
-    const shown=(st)=> mode==='paid' ? (st==='paid'?'Paid':(st==='skipped'||st==='na')?'—':'') : LABEL[st];
+    const LABEL={paid:'Paid',covered:'Covered',partial:'Partial',free:'Free',skipped:'Skipped',na:'—',none:''};
+    const SCREEN_COLOR={covered:'var(--ok-fg)',paid:'var(--ok-fg)',partial:'var(--warn-fg)',free:'var(--accent2)',skipped:'var(--muted)',na:'var(--muted)',none:''};
+    const HTML_COLOR={covered:'#0b7a5a',paid:'#0b7a5a',partial:'#b45309',free:'#6d28d9',skipped:'#6b7280',na:'#6b7280',none:'#111'};
+    const shown=(st)=> mode==='paid' ? ((st==='paid'||st==='covered')?'Paid':(st==='skipped'||st==='na')?'—':'') : LABEL[st];
     classes.forEach(c=>{
       const t=DB.teachers.find(x=>x.id===c.teacherId); const all=DB.students.filter(s=>s.status!=='inactive'&&isEnrolled(s,c.id)).sort((a,b)=>(a.firstName+' '+(a.lastName||'')).localeCompare(b.firstName+' '+(b.lastName||'')));
       const dailyN=all.filter(s=>effectivePayType(s,c.id)==='Daily').length; let list=all.filter(s=>effectivePayType(s,c.id)!=='Daily');
